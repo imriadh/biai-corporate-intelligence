@@ -1,0 +1,75 @@
+{
+  "reference_date": "2026-11-01",
+  "total_records": 25,
+  "unique_companies_normalized": 24,
+  "exact_duplicate_pairs": [
+    [
+      "L01",
+      "L23"
+    ]
+  ],
+  "potential_duplicate_pairs": [
+    [
+      "L02",
+      "L03"
+    ]
+  ],
+  "missing_contact_lead_ids": [
+    "L06",
+    "L24"
+  ],
+  "invalid_dates": [],
+  "date_order_violations": [
+    "L25"
+  ],
+  "overdue_lead_ids": [
+    "L04",
+    "L06",
+    "L10",
+    "L13",
+    "L15",
+    "L19",
+    "L20",
+    "L22",
+    "L25"
+  ],
+  "stage_counts": {
+    "New": 3,
+    "Contacted": 8,
+    "Meeting": 6,
+    "Proposal": 3,
+    "Invoice sent": 2,
+    "Paid": 1,
+    "Lost": 2
+  },
+  "stage_values": {
+    "New": 0,
+    "Contacted": 0,
+    "Meeting": 1900000,
+    "Proposal": 1620000,
+    "Invoice sent": 400000,
+    "Paid": 300000,
+    "Lost": 0
+  },
+  "total_pipeline_value_active": 3920000,
+  "total_pipeline_value_all": 4220000,
+  "paid_count": 1,
+  "paid_value": 300000,
+  "flagged_ids": [
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L06",
+    "L10",
+    "L13",
+    "L15",
+    "L18",
+    "L19",
+    "L20",
+    "L22",
+    "L23",
+    "L24",
+    "L25"
+  ]
+}
