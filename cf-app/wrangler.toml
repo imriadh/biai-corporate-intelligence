@@ -1,0 +1,37 @@
+name = "biai-corporate-intelligence"
+main = "src/index.ts"
+compatibility_date = "2025-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+# D1 database binding (persistent SQLite — leads + users + import_log)
+[[d1_databases]]
+binding = "DB"
+database_name = "biai-leads"
+database_id = "122badc0-42ff-49c3-881a-de36d70603fd"
+
+# Cloudflare Workers AI binding (free 10k req/day; native, no external key)
+[ai]
+binding = "AI"
+
+# Static assets — the Vite-built React frontend.
+# The Worker handles /api/* routes; everything else falls through to assets
+# with SPA history-fallback so client-side routing works.
+[assets]
+directory = "./frontend/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+# AI provider keys are stored as secrets via `wrangler secret put` (never in this file).
+# ZAI_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY, JWT_SECRET
+
+[vars]
+AI_PRIMARY_PROVIDER = "workersai"  # use Cloudflare Workers AI (free) as the primary AI provider
+ZAI_BASE_URL = "https://api.z.ai/api/paas/v4"
+ZAI_MODEL = "glm-4.6"
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+GROQ_MODEL = "llama-3.3-70b-versatile"
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+OPENROUTER_MODEL = "anthropic/claude-3.5-sonnet"
+
+[observability]
+enabled = true

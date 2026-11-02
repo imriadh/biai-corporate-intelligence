@@ -1,0 +1,26 @@
+{
+  "name": "biai-corporate-intelligence-worker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tailwind": "cd frontend && bun run build",
+    "build:fe": "cd frontend && bun run build",
+    "db:query": "wrangler d1 execute biai-leads --command",
+    "db:migrate": "wrangler d1 execute biai-leads --file=migrations/0001_init.sql --remote",
+    "db:migrate:local": "wrangler d1 execute biai-leads --file=migrations/0001_init.sql --local",
+    "secret:zai": "wrangler secret put ZAI_API_KEY",
+    "secret:groq": "wrangler secret put GROQ_API_KEY",
+    "secret:jwt": "wrangler secret put JWT_SECRET",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.6.14"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250101.0",
+    "typescript": "^5.7.2",
+    "wrangler": "^3.95.0"
+  }
+}

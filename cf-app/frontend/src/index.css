@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 22% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 22% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 22% 11%;
+    --primary: 222 22% 11%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 222 22% 11%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+    --accent: 220 14% 96%;
+    --accent-foreground: 222 22% 11%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 220 13% 67%;
+    --radius: 0.625rem;
+    /* BIAI brand — restrained teal-emerald */
+    --brand: 178 45% 32%;
+    --brand-foreground: 0 0% 100%;
+    --brand-soft: 178 40% 95%;
+    --brand-muted: 178 35% 87%;
+  }
+
+  * { border-color: hsl(var(--border)); }
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* semantic status colors (reused across screens) */
+@layer utilities {
+  .text-status-overdue { color: hsl(38 80% 45%); }
+  .bg-status-overdue { background-color: hsl(38 80% 45%); }
+  .text-status-lost { color: hsl(0 70% 48%); }
+  .bg-status-lost { background-color: hsl(0 70% 48%); }
+  .text-status-paid { color: hsl(152 55% 38%); }
+  .bg-status-paid { background-color: hsl(152 55% 38%); }
+  .text-status-warn { color: hsl(38 70% 50%); }
+}

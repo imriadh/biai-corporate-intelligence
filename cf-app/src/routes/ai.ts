@@ -1,0 +1,151 @@
+// /api/ai — email drafting + NL query.
+// Uses the multi-provider chat() with Cloudflare Workers AI as primary.
+
+import { Hono } from "hono";
+import type { AppEnv } from "../index";
+import { chat, extractJSON, type Env } from "../lib/ai";
+import { EMAIL_SYSTEM_PROMPT, EMAIL_USER_TEMPLATE, leadEmailContext, QUERY_SYSTEM_PROMPT, QUERY_USER_TEMPLATE, queryContext } from "../lib/prompts";
+import { runDeterministicQuery, executeStructuredSpec, type QueryResult } from "../lib/query-engine";
+import { d1RowsToRawLeads, buildNormalizedLeads, buildAuditSummary } from "../lib/pipeline";
+import type { NormalizedLead } from "../lib/types";
+
+export const aiRoute = new Hono<AppEnv>();
+
+async function loadDataset(env: Env): Promise<{ leads: NormalizedLead[]; audit: ReturnType<typeof buildAuditSummary> }> {
+  const { results } = await env.DB.prepare(
+    "SELECT lead_id, company, industry, contact_name, contact_role, contact_email, contact_phone, source, stage, deal_value_raw, last_contact, next_follow_up, notes FROM leads ORDER BY lead_id"
+  ).all();
+  const leads = buildNormalizedLeads(d1RowsToRawLeads(results as never));
+  return { leads, audit: buildAuditSummary(leads) };
+}
+
+function serializeRows(rows: QueryResult["rows"], columns: QueryResult["columns"]) {
+  if (!rows || !columns) return [];
+  return rows.map((l) => {
+    const o: Record<string, string> = {};
+    for (const c of columns) {
+      const key = c.key as keyof NormalizedLead;
+      if (c.key === "dealValue") o[c.label] = new Intl.NumberFormat("en-US").format(l.dealValue) + " BDT";
+      else if (c.key === "issues") o[c.label] = l.issues.map((i) => i.type).join(", ");
+      else if (c.key === "missingFields") o[c.label] = l.missingFields.join(", ");
+      else o[c.label] = String(l[key] ?? "");
+    }
+    return o;
+  });
+}
+
+// POST /api/ai/email { leadId } → { subject, body, provider, model, ms, gmailUrl }
+aiRoute.post("/email", async (c) => {
+  let body: { leadId?: string };
+  try { body = await c.req.json(); } catch { return c.json({ error: "Invalid JSON body." }, 400); }
+  const leadId = (body.leadId ?? "").trim();
+  if (!leadId) return c.json({ error: "leadId is required." }, 400);
+
+  const { leads } = await loadDataset(c.env);
+  const lead = leads.find((l) => l.leadId === leadId);
+  if (!lead) return c.json({ error: `Lead ${leadId} not found.` }, 404);
+
+  try {
+    const result = await chat(c.env, [
+      { role: "system", content: EMAIL_SYSTEM_PROMPT },
+      { role: "user", content: EMAIL_USER_TEMPLATE(leadEmailContext(lead)) },
+    ], { temperature: 0.5, maxTokens: 700, jsonMode: true });
+
+    let email: { subject: string; body: string };
+    try { email = extractJSON<{ subject: string; body: string }>(result.content); }
+    catch {
+      return c.json({ error: "The model returned a malformed response. Please try Regenerate.", provider: result.provider, model: result.model, raw: result.content.slice(0, 400) }, 502);
+    }
+    if (!email.subject || !email.body) return c.json({ error: "The model response was missing subject or body." }, 502);
+
+    // Gmail compose URL — opens Gmail with To/Subject/Body pre-filled (no copy/paste needed).
+    // To: the lead's contact email (if present). Falls back to no recipient if missing.
+    const to = lead.contactEmail || "";
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1${to ? `&to=${encodeURIComponent(to)}` : ""}&su=${encodeURIComponent(email.subject)}&body=${encodeURIComponent(email.body)}`;
+    // also a standard mailto: fallback for non-Gmail clients
+    const mailtoUrl = `mailto:${to}?subject=${encodeURIComponent(email.subject)}&body=${encodeURIComponent(email.body)}`;
+
+    return c.json({
+      subject: email.subject.trim(),
+      body: email.body.trim(),
+      provider: result.provider,
+      model: result.model,
+      ms: result.ms,
+      to,
+      gmailUrl,
+      mailtoUrl,
+    });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : "Unknown error." }, 502);
+  }
+});
+
+// POST /api/ai/query { question } → deterministic first, then LLM-assisted spec
+aiRoute.post("/query", async (c) => {
+  let body: { question?: string };
+  try { body = await c.req.json(); } catch { return c.json({ error: "Invalid JSON body." }, 400); }
+  const question = (body.question ?? "").trim();
+  if (!question) return c.json({ error: "question is required." }, 400);
+
+  const { leads, audit } = await loadDataset(c.env);
+
+  // 1) deterministic
+  const det = runDeterministicQuery(question, leads, audit);
+  if (det.matched) {
+    return c.json({
+      handledBy: "deterministic",
+      intent: det.intent,
+      summary: det.summary,
+      scalar: det.scalar,
+      scalarLabel: det.scalarLabel,
+      columns: det.columns,
+      table: serializeRows(det.rows, det.columns),
+      rowCount: det.rows?.length ?? 0,
+    });
+  }
+
+  // 2) LLM-assisted structured query spec
+  try {
+    const result = await chat(c.env, [
+      { role: "system", content: QUERY_SYSTEM_PROMPT },
+      { role: "user", content: QUERY_USER_TEMPLATE(question, queryContext()) },
+    ], { temperature: 0, maxTokens: 400, jsonMode: true });
+
+    let spec: { understood?: boolean; reason?: string; filter?: Parameters<typeof executeStructuredSpec>[0]["filter"]; sort?: Parameters<typeof executeStructuredSpec>[0]["sort"]; aggregate?: Parameters<typeof executeStructuredSpec>[0]["aggregate"]; limit?: number; human_label?: string };
+    try { spec = extractJSON(result.content); }
+    catch { return c.json({ handledBy: "llm", error: "The model could not produce a valid query spec.", provider: result.provider }, 502); }
+
+    if (spec.understood === false) {
+      return c.json({
+        handledBy: "llm",
+        understood: false,
+        summary: spec.reason ?? "I could not map that question to the pipeline data. Try asking about stages, overdue deals, deal values, missing contacts, or duplicates.",
+        suggestion: "Examples: 'Which deals are overdue?', 'Total value in Proposal stage', 'Which companies have missing contact details?', 'Show leads in Meeting stage', 'Which deals have the highest value?'",
+        provider: result.provider,
+      });
+    }
+
+    const executed = executeStructuredSpec({ filter: spec.filter, sort: spec.sort, aggregate: spec.aggregate, limit: spec.limit }, leads);
+    return c.json({
+      handledBy: "llm",
+      understood: true,
+      intent: executed.intent,
+      humanLabel: spec.human_label ?? question,
+      summary: executed.summary,
+      scalar: executed.scalar,
+      scalarLabel: executed.scalarLabel,
+      columns: executed.columns,
+      table: serializeRows(executed.rows, executed.columns),
+      rowCount: executed.rows?.length ?? 0,
+      provider: result.provider,
+      model: result.model,
+      spec,
+    });
+  } catch (err) {
+    return c.json({
+      handledBy: "llm",
+      error: err instanceof Error ? err.message : "Unknown error.",
+      suggestion: "AI provider unavailable. Deterministic questions still work — try 'Which deals are overdue?' or 'Total value in Proposal stage'.",
+    }, 502);
+  }
+});
