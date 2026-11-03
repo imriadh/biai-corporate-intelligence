@@ -54,7 +54,7 @@ aiRoute.post("/email", async (c) => {
     const result = await chat(c.env, [
       { role: "system", content: EMAIL_SYSTEM_PROMPT },
       { role: "user", content: EMAIL_USER_TEMPLATE(leadEmailContext(lead)) },
-    ], { temperature: 0.5, maxTokens: 700, jsonMode: true });
+    ], { temperature: 0.5, maxTokens: 900, jsonMode: true });
 
     let email: { subject: string; body: string };
     try { email = extractJSON<{ subject: string; body: string }>(result.content); }

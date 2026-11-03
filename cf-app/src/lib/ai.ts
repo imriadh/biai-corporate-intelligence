@@ -169,13 +169,32 @@ export async function chat(env: Env, messages: ChatMessage[], opts: ChatOptions 
 
 export function extractJSON<T = unknown>(content: string): T {
   const trimmed = content.trim();
-  try { return JSON.parse(trimmed) as T; } catch { /* fall through */ }
+  // Models sometimes emit literal newlines inside JSON string values, which
+  // breaks JSON.parse. Escape them before parsing.
+  try { return JSON.parse(escapeNewlinesInStrings(trimmed)) as T; } catch { /* fall through */ }
   const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(trimmed);
-  if (fenced) { try { return JSON.parse(fenced[1]) as T; } catch { /* fall through */ } }
+  if (fenced) { try { return JSON.parse(escapeNewlinesInStrings(fenced[1])) as T; } catch { /* fall through */ } }
   const first = trimmed.indexOf("{");
   const last = trimmed.lastIndexOf("}");
   if (first !== -1 && last !== -1 && last > first) {
-    try { return JSON.parse(trimmed.slice(first, last + 1)) as T; } catch { /* fall through */ }
+    try { return JSON.parse(escapeNewlinesInStrings(trimmed.slice(first, last + 1))) as T; } catch { /* fall through */ }
   }
   throw new Error("Model did not return valid JSON.");
+}
+
+/** Escape literal newlines/carriage returns that appear inside JSON string values. */
+function escapeNewlinesInStrings(text: string): string {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (escaped) { out += ch; escaped = false; continue; }
+    if (ch === "\\") { out += ch; escaped = true; continue; }
+    if (ch === '"') { inString = !inString; out += ch; continue; }
+    if (inString && ch === "\n") { out += "\\n"; continue; }
+    if (inString && ch === "\r") { out += "\\r"; continue; }
+    out += ch;
+  }
+  return out;
 }

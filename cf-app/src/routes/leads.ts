@@ -33,6 +33,36 @@ leadsRoute.get("/audit", async (c) => {
   return c.json({ audit, leads });
 });
 
+// GET /api/leads/export.csv — download the cleaned pipeline as a spreadsheet.
+// MUST be defined before /:id or Hono matches "export.csv" as a lead id.
+leadsRoute.get("/export.csv", async (c) => {
+  const leads = await fetchAllLeads(c.env);
+  const header = [
+    "lead id", "company", "industry", "contact name", "contact role",
+    "contact email", "contact phone", "source", "stage", "deal value (BDT)",
+    "last contact", "next follow-up", "follow-up status",
+    "missing fields", "duplicate flags", "data-quality issues", "notes",
+  ];
+  const esc = (s: string) => {
+    const needs = /[",\n]/.test(s);
+    return needs ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const rows = leads.map((l) => [
+    l.leadId, l.company, l.industry, l.contactName, l.contactRole,
+    l.contactEmail, l.contactPhone, l.source, l.stageNormalized, String(l.dealValue),
+    l.lastContact, l.nextFollowUp,
+    l.isOverdue ? "overdue" : (l.isTerminal ? "terminal" : (l.nextFollowUpDate ? "upcoming" : "no follow-up")),
+    l.missingFields.join("; "),
+    l.duplicateLinks.map((d) => `${d.kind} of ${d.partnerIds.join(",")}`).join("; "),
+    l.issues.map((i) => i.type).join("; "),
+    l.notes,
+  ].map(esc).join(","));
+  const csv = [header.map(esc).join(","), ...rows].join("\n");
+  c.header("Content-Type", "text/csv; charset=utf-8");
+  c.header("Content-Disposition", `attachment; filename="biai-pipeline-cleaned.csv"`);
+  return c.body(csv);
+});
+
 // GET /api/leads/:id — single lead
 leadsRoute.get("/:id", async (c) => {
   const id = c.req.param("id");

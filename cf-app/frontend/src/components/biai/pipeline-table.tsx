@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, ArrowUpDown, AlertTriangle, Copy, PhoneOff, UserX, CalendarX, Layers } from "lucide-react";
+import { Search, ArrowUpDown, AlertTriangle, Copy, PhoneOff, UserX, CalendarX, Layers, Download } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -59,6 +59,24 @@ export function PipelineTable({ leads, onOpenLead }: Props) {
 
   const activePipelineValue = filtered.reduce((s, l) => s + l.dealValue, 0);
 
+  const exportCSV = async () => {
+    try {
+      const res = await fetch("/api/leads/export.csv", { credentials: "include" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "biai-pipeline-cleaned.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert("Export failed: " + (e instanceof Error ? e.message : "?"));
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Filters */}
@@ -102,6 +120,9 @@ export function PipelineTable({ leads, onOpenLead }: Props) {
               onClick={() => setOnlyIssues((v) => !v)}
             >
               <AlertTriangle className="h-3.5 w-3.5" /> Issues only
+            </Button>
+            <Button variant="outline" size="sm" className="h-9" onClick={exportCSV}>
+              <Download className="h-3.5 w-3.5" /> Export CSV
             </Button>
           </div>
         </div>

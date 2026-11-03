@@ -292,7 +292,7 @@ export function LeadDetail({ leads, selected, onSelect, onRefresh }: Props) {
                     <Textarea
                       value={email.body}
                       readOnly
-                      className="mt-0.5 text-[13px] min-h-[180px] resize-y bg-muted/30"
+                      className="mt-0.5 text-[13px] min-h-[280px] resize-y bg-muted/30 whitespace-pre-wrap leading-relaxed"
                     />
                   </div>
                   <div className="flex items-center justify-between gap-2 flex-wrap">
