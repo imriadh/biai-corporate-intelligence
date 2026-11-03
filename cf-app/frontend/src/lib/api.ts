@@ -40,13 +40,22 @@ export interface QueryResponse {
   error?: string;
   suggestion?: string;
 }
+export interface ChasePlanItem {
+  leadId: string;
+  company: string;
+  action: string;
+  priority: string;
+}
 export interface ChasePlanResponse {
-  plan?: string;
+  summary?: string;
+  items?: ChasePlanItem[];
+  plan?: string; // legacy fallback
   overdue?: number;
   upcoming?: number;
   provider?: string;
   model?: string;
   ms?: number;
+  warning?: string;
   error?: string;
 }
 export interface ImportPreviewRow {

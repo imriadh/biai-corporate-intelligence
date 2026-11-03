@@ -20,9 +20,11 @@ interface DashboardProps {
   audit: AuditSummary;
   onOpenLead: (id: string) => void;
   onGoTo: (v: View) => void;
+  doneLeads: Set<string>;
+  onResetDone: () => void;
 }
 
-export function Dashboard({ leads, audit, onOpenLead, onGoTo }: DashboardProps) {
+export function Dashboard({ leads, audit, onOpenLead, onGoTo, doneLeads, onResetDone }: DashboardProps) {
   const [chasePlan, setChasePlan] = useState<ChasePlanResponse | null>(null);
   const [chaseLoading, setChaseLoading] = useState(false);
 
@@ -302,18 +304,70 @@ export function Dashboard({ leads, audit, onOpenLead, onGoTo }: DashboardProps) 
               <Skeleton className="h-4 w-3/4" />
             </div>
           )}
-          {!chaseLoading && chasePlan?.plan && (
-            <div className="rounded-md bg-brand-soft/40 border border-brand-muted p-3">
-              <pre className="whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-foreground">{chasePlan.plan}</pre>
-              <div className="mt-2 pt-2 border-t border-brand-muted text-[11px] text-muted-foreground flex items-center gap-3">
-                <span>{chasePlan.overdue ?? 0} overdue · {chasePlan.upcoming ?? 0} upcoming</span>
-                {chasePlan.provider && <span>via {chasePlan.provider}{chasePlan.model ? ` · ${chasePlan.model}` : ""}{chasePlan.ms ? ` · ${chasePlan.ms}ms` : ""}</span>}
+          {!chaseLoading && chasePlan?.items && chasePlan.items.length > 0 && (() => {
+            const doneCount = chasePlan.items.filter((it) => doneLeads.has(it.leadId)).length;
+            const pct = Math.round((doneCount / chasePlan.items.length) * 100);
+            return (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <p className="text-[13px] text-foreground font-medium">{chasePlan.summary}</p>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-[11px]">{doneCount}/{chasePlan.items.length} done · {pct}%</Badge>
+                    {doneCount > 0 && <Button variant="ghost" size="sm" className="h-6 text-[11px] px-2" onClick={onResetDone}>Reset</Button>}
+                  </div>
+                </div>
+                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div className="h-full bg-brand transition-all" style={{ width: `${pct}%` }} />
+                </div>
+                <ul className="space-y-1.5">
+                  {chasePlan.items.map((it, i) => {
+                    const done = doneLeads.has(it.leadId);
+                    const prio = (it.priority || "").toLowerCase();
+                    const prioCls = prio === "high" ? "text-status-lost border-rose-200 bg-rose-50" : prio === "medium" ? "text-status-warn border-amber-200 bg-amber-50" : "text-muted-foreground border-slate-200 bg-slate-50";
+                    return (
+                      <li key={it.leadId + i}>
+                        <button
+                          onClick={() => onOpenLead(it.leadId)}
+                          className={cn(
+                            "w-full text-left rounded-md border p-2.5 flex items-start gap-2.5 transition-all hover:border-brand hover:shadow-sm",
+                            done ? "border-emerald-200 bg-emerald-50/50 opacity-70" : "border-border bg-card",
+                          )}
+                        >
+                          <span className={cn("mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold", done ? "bg-status-paid text-white" : "bg-muted text-muted-foreground")}>
+                            {done ? "✓" : i + 1}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={cn("font-mono text-[11px] text-muted-foreground", done && "line-through")}>{it.leadId}</span>
+                              <span className={cn("text-[13px] font-medium", done && "line-through text-muted-foreground")}>{it.company}</span>
+                              <Badge variant="outline" className={cn("text-[10px] capitalize", prioCls)}>{prio || "low"}</Badge>
+                              {done && <Badge variant="outline" className="text-[10px] text-status-paid border-emerald-200 bg-emerald-50">Done</Badge>}
+                            </div>
+                            <p className={cn("text-[12px] text-muted-foreground mt-0.5", done && "line-through")}>{it.action}</p>
+                          </div>
+                          {!done && <span className="text-[11px] text-brand shrink-0 mt-0.5 inline-flex items-center gap-0.5">Open <ArrowRight className="h-3 w-3" /></span>}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <div className="pt-1 text-[11px] text-muted-foreground flex items-center gap-3 flex-wrap">
+                  <span>{chasePlan.overdue ?? 0} overdue · {chasePlan.upcoming ?? 0} upcoming</span>
+                  {chasePlan.provider && <span>via {chasePlan.provider}{chasePlan.ms ? ` · ${chasePlan.ms}ms` : ""}</span>}
+                  <span className="text-brand">Click an item → send the email → it marks done</span>
+                </div>
               </div>
+            );
+          })()}
+          {!chaseLoading && chasePlan && !chasePlan.items?.length && (chasePlan.plan || chasePlan.summary) && (
+            <div className="rounded-md bg-brand-soft/40 border border-brand-muted p-3">
+              <pre className="whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-foreground">{chasePlan.plan || chasePlan.summary}</pre>
+              {chasePlan.warning && <p className="text-[11px] text-status-warn mt-1">{chasePlan.warning}</p>}
             </div>
           )}
           {!chaseLoading && !chasePlan && (
             <p className="text-[12px] text-muted-foreground py-2">
-              Click <b>Generate chase plan</b> to get a prioritized, plain-English action list for this week — built from your real overdue and upcoming follow-ups.
+              Click <b>Generate chase plan</b> to get a prioritized action checklist for this week. Each item links to a lead — click it, send the email, and it marks done so you can move to the next.
             </p>
           )}
           {!chaseLoading && chasePlan?.error && (

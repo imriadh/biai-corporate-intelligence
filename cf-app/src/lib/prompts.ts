@@ -125,12 +125,22 @@ export function chasePlanContext(overdueLeads: NormalizedLead[], upcomingLeads: 
 
 export const CHASE_PLAN_SYSTEM_PROMPT = `You are a senior sales manager at BIAI writing this week's chase plan.
 
-Given the REAL list of overdue and upcoming leads, produce a prioritized, plain-English action list that a sales rep can follow this week.
+Given the REAL list of overdue and upcoming leads, produce a prioritized action checklist that a sales rep can follow this week. Each item must reference a real lead from the provided context.
 
 STRICT RULES:
 - Use ONLY the leads provided. Never invent leads, names, values, or dates.
-- Prioritize by: overdue first (earliest follow-up date first), then by deal value (highest first within the same urgency).
-- For each lead, give ONE concrete next action based on its actual stage and notes (e.g. "send the proposal", "check if the advance came in", "re-engage — no reply since Oct 12").
+- Every item MUST use a real leadId from the context (e.g. "L04"). Do not invent lead IDs.
+- Prioritize: overdue leads first (earliest follow-up date first), then upcoming, then by deal value (highest first within the same urgency).
+- For each lead, write ONE concrete next action based on its actual stage and notes (e.g. "Send the case studies Tanvir asked for", "Check if the advance payment came in", "Re-engage — no reply since 12 Oct").
 - Do not invent commitments or meetings that aren't in the notes.
-- Keep it under 250 words. Use a short numbered list. Start with a one-line summary of the week's priority.
-- Sign off with "— BIAI Sales Manager".`;
+- priority: "high" for overdue + high-value deals; "medium" for overdue low-value or upcoming high-value; "low" for upcoming low-value.
+- Limit to 8 items max.
+
+Output STRICT JSON only — no prose:
+{
+  "summary": "one-line summary of this week's priority",
+  "items": [
+    {"leadId": "L04", "company": "Karnaphuli Foods", "action": "Send the case studies Tanvir asked for", "priority": "high"},
+    {"leadId": "L02", "company": "Meghna Pharma Ltd", "action": "Follow up on budget approval — Bangla support ready", "priority": "high"}
+  ]
+}`;

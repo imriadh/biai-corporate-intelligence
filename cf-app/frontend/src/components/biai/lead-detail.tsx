@@ -23,6 +23,7 @@ interface Props {
   selected: NormalizedLead | null;
   onSelect: (id: string) => void;
   onRefresh: () => void;
+  onEmailSent: (leadId: string) => void;
 }
 
 interface EmailResult {
@@ -36,7 +37,7 @@ interface EmailResult {
   mailtoUrl?: string;
 }
 
-export function LeadDetail({ leads, selected, onSelect, onRefresh }: Props) {
+export function LeadDetail({ leads, selected, onSelect, onRefresh, onEmailSent }: Props) {
   const [email, setEmail] = useState<EmailResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -305,7 +306,7 @@ export function LeadDetail({ leads, selected, onSelect, onRefresh }: Props) {
                         {copied ? <><Check className="h-3.5 w-3.5" /> Copied</> : <><Copy className="h-3.5 w-3.5" /> Copy</>}
                       </Button>
                       {email.gmailUrl && (
-                        <a href={email.gmailUrl} target="_blank" rel="noopener noreferrer">
+                        <a href={email.gmailUrl} target="_blank" rel="noopener noreferrer" onClick={() => onEmailSent(selected.leadId)}>
                           <Button size="sm" className="bg-brand text-brand-foreground hover:bg-brand/90">
                             <Mail className="h-3.5 w-3.5" /> Send via Gmail
                           </Button>

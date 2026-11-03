@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { LayoutDashboard, Filter, FileWarning, Sparkles, Mail, Building2, CalendarClock, ShieldCheck, Upload, LogOut, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,21 @@ const NAV: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "import", label: "Import", icon: Upload },
 ];
 
+const DONE_KEY = "biai_chase_done";
+
+function loadDoneLeads(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DONE_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw) as string[];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch { return new Set(); }
+}
+
+function saveDoneLeads(set: Set<string>) {
+  try { localStorage.setItem(DONE_KEY, JSON.stringify([...set])); } catch { /* ignore */ }
+}
+
 interface AppShellProps {
   leads: NormalizedLead[];
   audit: AuditSummary;
@@ -35,6 +50,27 @@ interface AppShellProps {
 export function AppShell({ leads, audit, user, onRefresh, onLogout }: AppShellProps) {
   const [view, setView] = useState<View>("dashboard");
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+  const [doneLeads, setDoneLeads] = useState<Set<string>>(() => loadDoneLeads());
+
+  const markEmailSent = useCallback((leadId: string) => {
+    setDoneLeads((prev) => {
+      if (prev.has(leadId)) return prev;
+      const next = new Set(prev); next.add(leadId);
+      saveDoneLeads(next);
+      return next;
+    });
+  }, []);
+
+  const resetDone = useCallback(() => {
+    setDoneLeads(new Set()); saveDoneLeads(new Set());
+  }, []);
+
+  // keep doneLeads fresh if another tab changes it
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => { if (e.key === DONE_KEY) setDoneLeads(loadDoneLeads()); };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   const selectedLead = useMemo(
     () => leads.find((l) => l.leadId === selectedLeadId) ?? null,
@@ -101,9 +137,9 @@ export function AppShell({ leads, audit, user, onRefresh, onLogout }: AppShellPr
       </header>
 
       <main className="flex-1 mx-auto max-w-[1400px] w-full px-4 sm:px-6 py-6">
-        {view === "dashboard" && <Dashboard leads={leads} audit={audit} onOpenLead={openLead} onGoTo={setView} />}
+        {view === "dashboard" && <Dashboard leads={leads} audit={audit} onOpenLead={openLead} onGoTo={setView} doneLeads={doneLeads} onResetDone={resetDone} />}
         {view === "pipeline" && <PipelineTable leads={leads} onOpenLead={openLead} />}
-        {view === "lead" && <LeadDetail leads={leads} selected={selectedLead} onSelect={setSelectedLeadId} onRefresh={onRefresh} />}
+        {view === "lead" && <LeadDetail leads={leads} selected={selectedLead} onSelect={setSelectedLeadId} onRefresh={onRefresh} onEmailSent={markEmailSent} />}
         {view === "data-quality" && <DataQuality leads={leads} audit={audit} onOpenLead={openLead} />}
         {view === "analyst" && <AiAnalyst leads={leads} audit={audit} onOpenLead={openLead} />}
         {view === "import" && <ImportScreen onChanged={onRefresh} />}

@@ -155,7 +155,8 @@ aiRoute.post("/query", async (c) => {
   }
 });
 
-// POST /api/ai/chase-plan → this week's prioritized action list (AI-generated from real overdue+upcoming leads)
+// POST /api/ai/chase-plan → structured action checklist (AI-generated from real overdue+upcoming leads)
+interface ChasePlanItem { leadId: string; company: string; action: string; priority: string }
 aiRoute.post("/chase-plan", async (c) => {
   const { leads } = await loadDataset(c.env);
   const today = refDate(c.env);
@@ -169,17 +170,39 @@ aiRoute.post("/chase-plan", async (c) => {
     .sort((a, b) => (a.nextFollowUpDate ?? "").localeCompare(b.nextFollowUpDate ?? ""));
 
   if (overdue.length === 0 && upcoming.length === 0) {
-    return c.json({ plan: "No overdue or upcoming follow-ups this week. You're all caught up.", overdue: 0, upcoming: 0, provider: "none" });
+    return c.json({ summary: "No overdue or upcoming follow-ups this week. You're all caught up.", items: [], overdue: 0, upcoming: 0, provider: "none" });
   }
 
   try {
     const result = await chat(c.env, [
       { role: "system", content: CHASE_PLAN_SYSTEM_PROMPT },
-      { role: "user", content: chasePlanContext(overdue, upcoming) + `\n\nToday is ${today}. Write the chase plan now.` },
-    ], { temperature: 0.4, maxTokens: 600 });
+      { role: "user", content: chasePlanContext(overdue, upcoming) + `\n\nToday is ${today}. Write the chase plan now. Return STRICT JSON only.` },
+    ], { temperature: 0.4, maxTokens: 800 });
+
+    let parsed: { summary?: string; items?: ChasePlanItem[] };
+    try {
+      parsed = extractJSON<{ summary?: string; items?: ChasePlanItem[] }>(result.content);
+    } catch {
+      // fallback: return the raw text as the summary with no items
+      return c.json({
+        summary: result.content.slice(0, 300),
+        items: [],
+        overdue: overdue.length,
+        upcoming: upcoming.length,
+        provider: result.provider,
+        model: result.model,
+        ms: result.ms,
+        warning: "The model returned a non-structured response; showing the text summary instead.",
+      });
+    }
+
+    // Validate items: drop any with an unknown leadId (the model must not invent leads)
+    const knownIds = new Set(leads.map((l) => l.leadId));
+    const validItems = (parsed.items ?? []).filter((it) => knownIds.has(it.leadId));
 
     return c.json({
-      plan: result.content.trim(),
+      summary: parsed.summary ?? "This week's chase plan",
+      items: validItems,
       overdue: overdue.length,
       upcoming: upcoming.length,
       provider: result.provider,
