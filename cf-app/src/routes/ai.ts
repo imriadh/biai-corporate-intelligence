@@ -188,35 +188,51 @@ aiRoute.post("/chase-plan", async (c) => {
   }
 
   try {
+    // Use the fast 8B model with plain-text format (same approach as email).
     const result = await chat(c.env, [
       { role: "system", content: CHASE_PLAN_SYSTEM_PROMPT },
-      { role: "user", content: chasePlanContext(overdue, upcoming) + `\n\nToday is ${today}. Write the chase plan now. Return STRICT JSON only.` },
-    ], { temperature: 0.4, maxTokens: 800 });
+      { role: "user", content: chasePlanContext(overdue, upcoming) + `\n\nToday is ${today}. Write the chase plan now. Plain text only.` },
+    ], { temperature: 0.4, maxTokens: 600, model: "@cf/meta/llama-3.1-8b-instruct-fast" });
 
-    let parsed: { summary?: string; items?: ChasePlanItem[] };
-    try {
-      parsed = extractJSON<{ summary?: string; items?: ChasePlanItem[] }>(result.content);
-    } catch {
-      // fallback: return the raw text as the summary with no items
-      return c.json({
-        summary: result.content.slice(0, 300),
-        items: [],
-        overdue: overdue.length,
-        upcoming: upcoming.length,
-        provider: result.provider,
-        model: result.model,
-        ms: result.ms,
-        warning: "The model returned a non-structured response; showing the text summary instead.",
-      });
+    const raw = result.content.trim();
+    // Parse plain-text format:
+    //   SUMMARY: <one line>
+    //   <blank>
+    //   L04|high|Send the case studies
+    //   L10|medium|Send proposal
+    const lines = raw.split("\n");
+    let summary = "This week's chase plan";
+    const summaryLine = lines.find((l) => /^SUMMARY:/i.test(l.trim()));
+    if (summaryLine) summary = summaryLine.replace(/^SUMMARY:\s*/i, "").trim();
+
+    // Build a leadId → company lookup from the real dataset
+    const companyMap = new Map(leads.map((l) => [l.leadId, l.company]));
+    const knownIds = new Set(companyMap.keys());
+
+    const items: ChasePlanItem[] = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      // Match: L01|high|action text  (flexible priority word, normalized below)
+      const m = /^(L\d+)\s*\|\s*(\w+)\s*\|\s*(.+)$/i.exec(trimmed);
+      if (m) {
+        const leadId = m[1];
+        if (!knownIds.has(leadId)) continue; // drop unknown IDs (no invented leads)
+        const rawPrio = m[2].toLowerCase();
+        const priority = rawPrio.startsWith("h") ? "high" : rawPrio.startsWith("m") ? "medium" : "low";
+        items.push({
+          leadId,
+          company: companyMap.get(leadId) ?? "",
+          action: m[3].trim(),
+          priority,
+        });
+      }
     }
-
-    // Validate items: drop any with an unknown leadId (the model must not invent leads)
-    const knownIds = new Set(leads.map((l) => l.leadId));
-    const validItems = (parsed.items ?? []).filter((it) => knownIds.has(it.leadId));
+    // Cap to 8 items (the 8B model sometimes ignores the limit)
+    const capped = items.slice(0, 8);
 
     return c.json({
-      summary: parsed.summary ?? "This week's chase plan",
-      items: validItems,
+      summary,
+      items: capped,
       overdue: overdue.length,
       upcoming: upcoming.length,
       provider: result.provider,
