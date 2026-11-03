@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ShieldCheck, Loader2, Lock, User, Zap } from "lucide-react";
+import { ShieldCheck, Loader2, Lock, User, Zap, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,7 +36,10 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4 relative">
+      <a href="/" className="absolute top-4 left-4 inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground">
+        <ArrowLeft className="h-4 w-4" /> Back to home
+      </a>
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
           <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-md bg-brand text-brand-foreground">

@@ -3,12 +3,40 @@ import { api } from "@/lib/api";
 import type { AuditSummary, NormalizedLead } from "@/lib/types";
 import { AppShell } from "@/components/biai/app-shell";
 import { Login } from "@/components/biai/login";
+import { Landing } from "@/components/biai/landing";
 import { Toaster } from "@/components/ui/sonner";
 import { Loader2, ShieldCheck } from "lucide-react";
 
 interface User { sub: string; name: string; role: string }
 
+// Path-based routing without react-router:
+//   "/"      → marketing landing page
+//   "/app"   → the application (login → dashboard)
+// The Cloudflare Worker serves index.html for every path (SPA fallback),
+// so client-side path switching works without extra config.
+function usePath(): string {
+  const [path, setPath] = useState(() =>
+    typeof window !== "undefined" ? window.location.pathname : "/"
+  );
+  useEffect(() => {
+    const onPop = () => setPath(window.location.pathname);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  return path;
+}
+
 export default function App() {
+  const path = usePath();
+  const isApp = path === "/app" || path.startsWith("/app/");
+
+  // Landing page is public — no auth, no data fetch
+  if (!isApp) return <Landing />;
+
+  return <AppInner />;
+}
+
+function AppInner() {
   const [booting, setBooting] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [leads, setLeads] = useState<NormalizedLead[]>([]);

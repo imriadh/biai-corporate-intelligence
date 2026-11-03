@@ -55,9 +55,9 @@ export function AppShell({ leads, audit, user, onRefresh, onLogout }: AppShellPr
         <div className="mx-auto max-w-[1400px] px-4 sm:px-6">
           <div className="flex h-14 items-center justify-between gap-4">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-brand text-brand-foreground shrink-0">
+              <a href="/" title="Back to home" className="flex h-8 w-8 items-center justify-center rounded-md bg-brand text-brand-foreground shrink-0 hover:bg-brand/90">
                 <ShieldCheck className="h-5 w-5" />
-              </div>
+              </a>
               <div className="min-w-0">
                 <span className="font-semibold text-[15px] tracking-tight truncate block">BIAI Corporate Intelligence</span>
                 <p className="text-[11px] text-muted-foreground leading-none hidden sm:block">Every lead. Every follow-up. One clear pipeline.</p>
