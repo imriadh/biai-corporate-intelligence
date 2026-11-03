@@ -13,6 +13,7 @@ import { fmtBDT, fmtNum, fmtDate, STAGE_COLORS } from "./format";
 import { StageBadge } from "./stage-badge";
 import { api, type ChasePlanResponse } from "@/lib/api";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import type { View } from "./app-shell";
 
 interface DashboardProps {
