@@ -11,6 +11,10 @@ import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { NormalizedLead } from "@/lib/types";
 import { fmtBDT, fmtDate, ownerFor } from "./format";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { api } from "@/lib/api";
+import type { Stage } from "@/lib/types";
+import { ALL_STAGES, PIPELINE_STAGES, TERMINAL_STAGES } from "@/lib/types";
 import { StageBadge } from "./stage-badge";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +22,7 @@ interface Props {
   leads: NormalizedLead[];
   selected: NormalizedLead | null;
   onSelect: (id: string) => void;
+  onRefresh: () => void;
 }
 
 interface EmailResult {
@@ -31,11 +36,12 @@ interface EmailResult {
   mailtoUrl?: string;
 }
 
-export function LeadDetail({ leads, selected, onSelect }: Props) {
+export function LeadDetail({ leads, selected, onSelect, onRefresh }: Props) {
   const [email, setEmail] = useState<EmailResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [savingStage, setSavingStage] = useState(false);
 
   // reset email state when lead changes
   useEffect(() => {
@@ -95,6 +101,20 @@ export function LeadDetail({ leads, selected, onSelect }: Props) {
 
   const issues = selected.issues;
 
+  const updateStage = async (newStage: Stage) => {
+    if (newStage === selected.stageNormalized) return;
+    setSavingStage(true);
+    try {
+      await api.patchLead(selected.leadId, { stage: newStage });
+      toast("Stage updated", { description: `${selected.leadId} → ${newStage}` });
+      onRefresh();
+    } catch (e) {
+      toast.error("Could not update stage", { description: e instanceof Error ? e.message : "?" });
+    } finally {
+      setSavingStage(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Picker */}
@@ -107,9 +127,21 @@ export function LeadDetail({ leads, selected, onSelect }: Props) {
             <CardHeader className="pb-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="font-mono text-[11px] text-muted-foreground">{selected.leadId}</span>
                     <StageBadge stage={selected.stageNormalized} />
+                    <Select value={selected.stageNormalized} onValueChange={(v) => updateStage(v as Stage)} disabled={savingStage}>
+                      <SelectTrigger className="h-6 w-[150px] text-[11px] px-2 py-0 border-dashed">
+                        <SelectValue placeholder="Move stage…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wide">Active pipeline</div>
+                        {PIPELINE_STAGES.map((s) => <SelectItem key={s} value={s} className="text-[12px]">{s}</SelectItem>)}
+                        <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wide">Terminal</div>
+                        {TERMINAL_STAGES.map((s) => <SelectItem key={s} value={s} className="text-[12px]">{s}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    {savingStage && <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground" />}
                   </div>
                   <CardTitle className="text-lg leading-tight">{selected.company}</CardTitle>
                   <CardDescription className="mt-0.5">{selected.industry} · {selected.source}</CardDescription>

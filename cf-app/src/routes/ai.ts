@@ -4,19 +4,24 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../index";
 import { chat, extractJSON, type Env } from "../lib/ai";
-import { EMAIL_SYSTEM_PROMPT, EMAIL_USER_TEMPLATE, leadEmailContext, QUERY_SYSTEM_PROMPT, QUERY_USER_TEMPLATE, queryContext } from "../lib/prompts";
+import { EMAIL_SYSTEM_PROMPT, EMAIL_USER_TEMPLATE, leadEmailContext, QUERY_SYSTEM_PROMPT, QUERY_USER_TEMPLATE, queryContext, CHASE_PLAN_SYSTEM_PROMPT, chasePlanContext } from "../lib/prompts";
 import { runDeterministicQuery, executeStructuredSpec, type QueryResult } from "../lib/query-engine";
 import { d1RowsToRawLeads, buildNormalizedLeads, buildAuditSummary } from "../lib/pipeline";
-import type { NormalizedLead } from "../lib/types";
+import { todayUTC, type NormalizedLead } from "../lib/types";
 
 export const aiRoute = new Hono<AppEnv>();
+
+function refDate(env: Env): string {
+  return (env.REFERENCE_DATE as string) || todayUTC();
+}
 
 async function loadDataset(env: Env): Promise<{ leads: NormalizedLead[]; audit: ReturnType<typeof buildAuditSummary> }> {
   const { results } = await env.DB.prepare(
     "SELECT lead_id, company, industry, contact_name, contact_role, contact_email, contact_phone, source, stage, deal_value_raw, last_contact, next_follow_up, notes FROM leads ORDER BY lead_id"
   ).all();
-  const leads = buildNormalizedLeads(d1RowsToRawLeads(results as never));
-  return { leads, audit: buildAuditSummary(leads) };
+  const rd = refDate(env);
+  const leads = buildNormalizedLeads(d1RowsToRawLeads(results as never), rd);
+  return { leads, audit: buildAuditSummary(leads, rd) };
 }
 
 function serializeRows(rows: QueryResult["rows"], columns: QueryResult["columns"]) {
@@ -146,6 +151,46 @@ aiRoute.post("/query", async (c) => {
       handledBy: "llm",
       error: err instanceof Error ? err.message : "Unknown error.",
       suggestion: "AI provider unavailable. Deterministic questions still work — try 'Which deals are overdue?' or 'Total value in Proposal stage'.",
+    }, 502);
+  }
+});
+
+// POST /api/ai/chase-plan → this week's prioritized action list (AI-generated from real overdue+upcoming leads)
+aiRoute.post("/chase-plan", async (c) => {
+  const { leads } = await loadDataset(c.env);
+  const today = refDate(c.env);
+  const weekAhead = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+
+  const overdue = leads
+    .filter((l) => l.isOverdue)
+    .sort((a, b) => (a.nextFollowUpDate ?? "").localeCompare(b.nextFollowUpDate ?? ""));
+  const upcoming = leads
+    .filter((l) => !l.isOverdue && !l.isTerminal && l.nextFollowUpDate && l.nextFollowUpDate >= today && l.nextFollowUpDate <= weekAhead)
+    .sort((a, b) => (a.nextFollowUpDate ?? "").localeCompare(b.nextFollowUpDate ?? ""));
+
+  if (overdue.length === 0 && upcoming.length === 0) {
+    return c.json({ plan: "No overdue or upcoming follow-ups this week. You're all caught up.", overdue: 0, upcoming: 0, provider: "none" });
+  }
+
+  try {
+    const result = await chat(c.env, [
+      { role: "system", content: CHASE_PLAN_SYSTEM_PROMPT },
+      { role: "user", content: chasePlanContext(overdue, upcoming) + `\n\nToday is ${today}. Write the chase plan now.` },
+    ], { temperature: 0.4, maxTokens: 600 });
+
+    return c.json({
+      plan: result.content.trim(),
+      overdue: overdue.length,
+      upcoming: upcoming.length,
+      provider: result.provider,
+      model: result.model,
+      ms: result.ms,
+    });
+  } catch (err) {
+    return c.json({
+      error: err instanceof Error ? err.message : "Unknown error.",
+      overdue: overdue.length,
+      upcoming: upcoming.length,
     }, 502);
   }
 });

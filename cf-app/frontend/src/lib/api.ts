@@ -40,6 +40,15 @@ export interface QueryResponse {
   error?: string;
   suggestion?: string;
 }
+export interface ChasePlanResponse {
+  plan?: string;
+  overdue?: number;
+  upcoming?: number;
+  provider?: string;
+  model?: string;
+  ms?: number;
+  error?: string;
+}
 export interface ImportPreviewRow {
   leadId: string; company: string; stage: string; nextFollowUp: string;
   action: "insert" | "update" | "skip"; issues: string[];
@@ -79,6 +88,8 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question }),
     }),
+  chasePlan: () =>
+    apiFetch<ChasePlanResponse>("/api/ai/chase-plan", { method: "POST" }),
   importPreview: (csv: string, fileName: string) =>
     apiFetch<ImportResponse>(`/api/import?preview=true`, {
       method: "POST",

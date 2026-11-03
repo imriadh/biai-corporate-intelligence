@@ -7,7 +7,6 @@ import { parseCSVWithHeader } from "./csv";
 import {
   ALL_STAGES,
   PIPELINE_STAGES,
-  REFERENCE_DATE,
   TERMINAL_STAGES,
   type AuditSummary,
   type DataQualityIssue,
@@ -89,11 +88,11 @@ export function findMissingFields(raw: RawLead): string[] {
 
 // ---------- overdue ----------
 
-export function computeOverdue(followUpDate: string | null | "INVALID", stage: Stage): { isOverdue: boolean; reason: string } {
+export function computeOverdue(followUpDate: string | null | "INVALID", stage: Stage, refDate: string): { isOverdue: boolean; reason: string } {
   if (TERMINAL_STAGES.includes(stage as never)) return { isOverdue: false, reason: "terminal-stage" };
   if (followUpDate === null) return { isOverdue: false, reason: "no-followup" };
   if (followUpDate === "INVALID") return { isOverdue: false, reason: "invalid-date" };
-  if (followUpDate < REFERENCE_DATE) return { isOverdue: true, reason: "before-reference" };
+  if (followUpDate < refDate) return { isOverdue: true, reason: "before-reference" };
   return { isOverdue: false, reason: "on-or-after-reference" };
 }
 
@@ -154,7 +153,7 @@ export function detectDuplicatePairs(leads: RawLead[]): DupPair[] {
 
 // ---------- build normalized leads ----------
 
-export function buildNormalizedLeads(rawLeads: RawLead[]): NormalizedLead[] {
+export function buildNormalizedLeads(rawLeads: RawLead[], refDate: string): NormalizedLead[] {
   const dupPairs = detectDuplicatePairs(rawLeads);
   const dupMap = new Map<string, DuplicateLink[]>();
   for (const p of dupPairs) {
@@ -169,7 +168,7 @@ export function buildNormalizedLeads(rawLeads: RawLead[]): NormalizedLead[] {
     const followD = parseDate(raw.nextFollowUp);
     const dealValue = parseDealValue(raw.dealValueRaw);
     const missingFields = findMissingFields(raw);
-    const { isOverdue, reason } = computeOverdue(followD, stage);
+    const { isOverdue, reason } = computeOverdue(followD, stage, refDate);
     const issues: DataQualityIssue[] = [];
     const links = dupMap.get(raw.leadId) ?? [];
 
@@ -185,7 +184,7 @@ export function buildNormalizedLeads(rawLeads: RawLead[]): NormalizedLead[] {
       issues.push({ type: "date_order_violation", message: `Next follow-up (${raw.nextFollowUp}) is before last contact (${raw.lastContact}).`, severity: "error" });
     }
     if (isOverdue) {
-      issues.push({ type: "overdue", field: "next follow-up", message: `Follow-up overdue (was due ${raw.nextFollowUp}, before reference date ${REFERENCE_DATE}).`, severity: "warning" });
+      issues.push({ type: "overdue", field: "next follow-up", message: `Follow-up overdue (was due ${raw.nextFollowUp}, before reference date ${refDate}).`, severity: "warning" });
     }
     const email = raw.contactEmail.trim();
     if (email.includes("@")) {
@@ -220,7 +219,7 @@ export function buildNormalizedLeads(rawLeads: RawLead[]): NormalizedLead[] {
 
 // ---------- audit summary ----------
 
-export function buildAuditSummary(leads: NormalizedLead[]): AuditSummary {
+export function buildAuditSummary(leads: NormalizedLead[], refDate: string): AuditSummary {
   const stageSummaries: StageSummary[] = ALL_STAGES.map((stage) => {
     const inStage = leads.filter((l) => l.stageNormalized === stage);
     return { stage, count: inStage.length, value: inStage.reduce((s, l) => s + l.dealValue, 0), isTerminal: TERMINAL_STAGES.includes(stage as never) };
@@ -249,7 +248,7 @@ export function buildAuditSummary(leads: NormalizedLead[]): AuditSummary {
   const uniqueCompaniesNormalized = new Set(leads.map((l) => l.normalizedCompany)).size;
 
   return {
-    referenceDate: REFERENCE_DATE,
+    referenceDate: refDate,
     totalRecords: leads.length,
     uniqueCompaniesNormalized,
     exactDuplicatePairs: exactPairs,

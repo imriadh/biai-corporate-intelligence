@@ -17,6 +17,7 @@ export interface Env {
   AI_PRIMARY_PROVIDER?: string; // "workersai" | "zai" | "groq" | "openrouter"
   AI_MODEL?: string; // override Workers AI model
   JWT_SECRET?: string;
+  REFERENCE_DATE?: string; // override the overdue reference date (defaults to today)
   ZAI_API_KEY?: string;
   ZAI_BASE_URL?: string;
   ZAI_MODEL?: string;

@@ -1,14 +1,18 @@
 "use client";
 
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Users, Wallet, AlertTriangle, FileText, CheckCircle2, ArrowRight, TrendingUp, Clock } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Users, Wallet, AlertTriangle, FileText, CheckCircle2, ArrowRight, TrendingUp, Clock, Sparkles, RefreshCw } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { AuditSummary, NormalizedLead, StageSummary } from "@/lib/types";
 import { PIPELINE_STAGES, TERMINAL_STAGES } from "@/lib/types";
 import { fmtBDT, fmtNum, fmtDate, STAGE_COLORS } from "./format";
 import { StageBadge } from "./stage-badge";
+import { api, type ChasePlanResponse } from "@/lib/api";
+import { toast } from "sonner";
 import type { View } from "./app-shell";
 
 interface DashboardProps {
@@ -19,12 +23,26 @@ interface DashboardProps {
 }
 
 export function Dashboard({ leads, audit, onOpenLead, onGoTo }: DashboardProps) {
+  const [chasePlan, setChasePlan] = useState<ChasePlanResponse | null>(null);
+  const [chaseLoading, setChaseLoading] = useState(false);
+
   const overdueLeads = leads.filter((l) => l.isOverdue).sort((a, b) => (a.nextFollowUpDate ?? "").localeCompare(b.nextFollowUpDate ?? ""));
   const flaggedLeads = leads.filter((l) => l.hasIssues);
   const recentlyUpdated = [...leads]
     .filter((l) => l.lastContactDate)
     .sort((a, b) => (b.lastContactDate ?? "").localeCompare(a.lastContactDate ?? ""))
     .slice(0, 6);
+
+  const generateChasePlan = async () => {
+    setChaseLoading(true); setChasePlan(null);
+    try {
+      const r = await api.chasePlan();
+      setChasePlan(r);
+      if (r.error) toast.error("Chase plan failed", { description: r.error });
+    } catch (e) {
+      toast.error("Chase plan failed", { description: e instanceof Error ? e.message : "?" });
+    } finally { setChaseLoading(false); }
+  };
 
   const chartData = audit.stageSummaries.map((s) => ({
     stage: s.stage,
@@ -254,6 +272,53 @@ export function Dashboard({ leads, audit, onOpenLead, onGoTo }: DashboardProps) 
               </button>
             ))}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* AI weekly chase plan */}
+      <Card className="border-brand/30">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-brand" />
+                This week's chase plan
+              </CardTitle>
+              <CardDescription className="mt-0.5">
+                AI-prioritized action list from your {overdueLeads.length} overdue + upcoming leads. Uses real data only — no invented deals.
+              </CardDescription>
+            </div>
+            <Button onClick={generateChasePlan} disabled={chaseLoading} size="sm" className="bg-brand text-brand-foreground hover:bg-brand/90">
+              {chaseLoading ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Writing…</> : chasePlan ? <><RefreshCw className="h-3.5 w-3.5" /> Regenerate</> : <><Sparkles className="h-3.5 w-3.5" /> Generate chase plan</>}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {chaseLoading && (
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-5/6" />
+              <Skeleton className="h-4 w-4/6" />
+              <Skeleton className="h-4 w-3/4" />
+            </div>
+          )}
+          {!chaseLoading && chasePlan?.plan && (
+            <div className="rounded-md bg-brand-soft/40 border border-brand-muted p-3">
+              <pre className="whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-foreground">{chasePlan.plan}</pre>
+              <div className="mt-2 pt-2 border-t border-brand-muted text-[11px] text-muted-foreground flex items-center gap-3">
+                <span>{chasePlan.overdue ?? 0} overdue · {chasePlan.upcoming ?? 0} upcoming</span>
+                {chasePlan.provider && <span>via {chasePlan.provider}{chasePlan.model ? ` · ${chasePlan.model}` : ""}{chasePlan.ms ? ` · ${chasePlan.ms}ms` : ""}</span>}
+              </div>
+            </div>
+          )}
+          {!chaseLoading && !chasePlan && (
+            <p className="text-[12px] text-muted-foreground py-2">
+              Click <b>Generate chase plan</b> to get a prioritized, plain-English action list for this week — built from your real overdue and upcoming follow-ups.
+            </p>
+          )}
+          {!chaseLoading && chasePlan?.error && (
+            <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-status-lost">{chasePlan.error}</div>
+          )}
         </CardContent>
       </Card>
     </div>

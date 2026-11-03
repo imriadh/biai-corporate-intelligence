@@ -103,7 +103,7 @@ export function AppShell({ leads, audit, user, onRefresh, onLogout }: AppShellPr
       <main className="flex-1 mx-auto max-w-[1400px] w-full px-4 sm:px-6 py-6">
         {view === "dashboard" && <Dashboard leads={leads} audit={audit} onOpenLead={openLead} onGoTo={setView} />}
         {view === "pipeline" && <PipelineTable leads={leads} onOpenLead={openLead} />}
-        {view === "lead" && <LeadDetail leads={leads} selected={selectedLead} onSelect={setSelectedLeadId} />}
+        {view === "lead" && <LeadDetail leads={leads} selected={selectedLead} onSelect={setSelectedLeadId} onRefresh={onRefresh} />}
         {view === "data-quality" && <DataQuality leads={leads} audit={audit} onOpenLead={openLead} />}
         {view === "analyst" && <AiAnalyst leads={leads} audit={audit} onOpenLead={openLead} />}
         {view === "import" && <ImportScreen onChanged={onRefresh} />}

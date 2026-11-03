@@ -1,7 +1,7 @@
 // /api/auth — login, logout, me
 
 import { Hono } from "hono";
-import { setSessionCookie, clearSessionCookie, verifyPassword, issueJwt } from "../lib/auth";
+import { setSessionCookie, clearSessionCookie, verifyPassword, issueJwt, readSessionCookie, verifyJwt } from "../lib/auth";
 import type { AppEnv } from "../index";
 
 export const authRoute = new Hono<AppEnv>();
@@ -30,7 +30,14 @@ authRoute.post("/logout", (c) => {
   return c.json({ ok: true });
 });
 
+// NOTE: /me reads + verifies the cookie itself. It cannot rely on the auth
+// middleware because that middleware deliberately skips /api/auth/* (otherwise
+// login couldn't happen). This was the root cause of "login doesn't lead to
+// dashboard" — /me returned {user:null} because c.get("user") was never set.
 authRoute.get("/me", async (c) => {
-  // public — returns 401 if not logged in (frontend uses this to check session)
-  return c.json({ user: c.get("user") ?? null });
+  const token = readSessionCookie(c.req.header("cookie"));
+  if (!token) return c.json({ user: null });
+  const payload = await verifyJwt(c.env, token);
+  if (!payload) return c.json({ user: null });
+  return c.json({ user: { sub: payload.sub, name: payload.name, role: payload.role } });
 });

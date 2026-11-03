@@ -27,8 +27,15 @@ export const STAGE_ORDER: Record<Stage, number> = {
   Lost: -1,
 };
 
-// Reference date for overdue calculations (per stage-definitions.md & README)
-export const REFERENCE_DATE = "2026-11-01";
+// Reference date for overdue calculations.
+// The BIAI brief fixes this at 2026-11-01 for the audit snapshot
+// (see download/data-audit-report.md). For the LIVE Cloudflare deployment we
+// use today's date (UTC) so overdue stays current. NOTE: this MUST be called
+// at request time (inside a handler), not at module load — Cloudflare Workers
+// do not initialize Date/Math.random during module evaluation.
+export function todayUTC(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export interface RawLead {
   leadId: string;

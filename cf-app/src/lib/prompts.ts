@@ -93,3 +93,31 @@ RULES:
 
 export const QUERY_USER_TEMPLATE = (question: string, ctx: string) =>
   `Question: "${question}"\n\n${ctx}\n\nReturn the JSON query spec now.`;
+
+/**
+ * Chase-plan context: a compact list of the leads that need action this week.
+ * Only REAL data from the dataset — no invented records.
+ */
+export function chasePlanContext(overdueLeads: NormalizedLead[], upcomingLeads: NormalizedLead[]): string {
+  const fmt = (l: NormalizedLead) =>
+    `- ${l.leadId} ${l.company} (${l.industry}, ${l.stageNormalized}) — ${l.dealValue ? num(l.dealValue) + " BDT" : "no value yet"} — last contact ${l.lastContactDate || "(none)"} — next follow-up ${l.nextFollowUpDate || "(none)"} — notes: ${l.notes || "(none)"}`;
+  return [
+    `OVERDUE LEADS (${overdueLeads.length}) — follow-up date already passed:`,
+    ...overdueLeads.map(fmt),
+    "",
+    `UPCOMING THIS WEEK (${upcomingLeads.length}) — follow-up due in the next 7 days:`,
+    ...upcomingLeads.map(fmt),
+  ].join("\n");
+}
+
+export const CHASE_PLAN_SYSTEM_PROMPT = `You are a senior sales manager at BIAI writing this week's chase plan.
+
+Given the REAL list of overdue and upcoming leads, produce a prioritized, plain-English action list that a sales rep can follow this week.
+
+STRICT RULES:
+- Use ONLY the leads provided. Never invent leads, names, values, or dates.
+- Prioritize by: overdue first (earliest follow-up date first), then by deal value (highest first within the same urgency).
+- For each lead, give ONE concrete next action based on its actual stage and notes (e.g. "send the proposal", "check if the advance came in", "re-engage — no reply since Oct 12").
+- Do not invent commitments or meetings that aren't in the notes.
+- Keep it under 250 words. Use a short numbered list. Start with a one-line summary of the week's priority.
+- Sign off with "— BIAI Sales Manager".`;

@@ -4,16 +4,20 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../index";
 import { d1RowsToRawLeads, buildNormalizedLeads, buildAuditSummary, normalizeCompany, normalizeEmail, normalizePhone, parseDealValue } from "../lib/pipeline";
-import type { NormalizedLead } from "../lib/types";
+import { todayUTC, type NormalizedLead } from "../lib/types";
 
 export const leadsRoute = new Hono<AppEnv>();
+
+function refDate(env: AppEnv["Bindings"]): string {
+  return (env.REFERENCE_DATE as string) || todayUTC();
+}
 
 async function fetchAllLeads(env: AppEnv["Bindings"]): Promise<NormalizedLead[]> {
   const { results } = await env.DB.prepare(
     "SELECT lead_id, company, industry, contact_name, contact_role, contact_email, contact_phone, source, stage, deal_value_raw, last_contact, next_follow_up, notes FROM leads ORDER BY lead_id"
   ).all();
   const raw = d1RowsToRawLeads(results as unknown as Parameters<typeof d1RowsToRawLeads>[0]);
-  return buildNormalizedLeads(raw);
+  return buildNormalizedLeads(raw, refDate(env));
 }
 
 // GET /api/leads — all leads (normalized)
@@ -25,7 +29,7 @@ leadsRoute.get("/", async (c) => {
 // GET /api/leads/audit — full audit summary (KPIs, dup pairs, etc.)
 leadsRoute.get("/audit", async (c) => {
   const leads = await fetchAllLeads(c.env);
-  const audit = buildAuditSummary(leads);
+  const audit = buildAuditSummary(leads, refDate(c.env));
   return c.json({ audit, leads });
 });
 
@@ -36,7 +40,7 @@ leadsRoute.get("/:id", async (c) => {
     "SELECT lead_id, company, industry, contact_name, contact_role, contact_email, contact_phone, source, stage, deal_value_raw, last_contact, next_follow_up, notes FROM leads WHERE lead_id = ?"
   ).bind(id).first();
   if (!row) return c.json({ error: `Lead ${id} not found.` }, 404);
-  const leads = buildNormalizedLeads(d1RowsToRawLeads([row as never]));
+  const leads = buildNormalizedLeads(d1RowsToRawLeads([row as never]), refDate(c.env));
   return c.json({ lead: leads[0] });
 });
 
