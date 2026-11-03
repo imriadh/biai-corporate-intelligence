@@ -30,7 +30,7 @@ export interface Env {
   [key: string]: string | D1Database | Ai | Fetcher | undefined;
 }
 
-const DEFAULT_WORKERS_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+const DEFAULT_WORKERS_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast";
 
 const HTTP_PROVIDERS = {
   zai: { prefix: "ZAI", label: "Z.ai", defaultBaseUrl: "https://api.z.ai/api/paas/v4", defaultModel: "glm-4.6" },
