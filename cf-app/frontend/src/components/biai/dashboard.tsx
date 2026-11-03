@@ -16,6 +16,19 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { View } from "./app-shell";
 
+// Explicit hex colors per stage for the pipeline chart — SVG fill doesn't
+// resolve CSS custom properties, so we use hex values. The palette flows
+// cool → warm → green/red to read like a sales funnel.
+const STAGE_CHART_COLORS: Record<string, string> = {
+  New: "#6366f1",            // indigo — fresh lead
+  Contacted: "#0d9488",      // teal — engaged
+  Meeting: "#0891b2",        // cyan — progressing
+  Proposal: "#f59e0b",       // amber — warming up
+  "Invoice sent": "#f97316", // orange — close to close
+  Paid: "#10b981",           // emerald — success
+  Lost: "#ef4444",           // red — failure
+};
+
 interface DashboardProps {
   leads: NormalizedLead[];
   audit: AuditSummary;
@@ -112,30 +125,28 @@ export function Dashboard({ leads, audit, onOpenLead, onGoTo, doneLeads, onReset
             <div className="h-[280px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border" />
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
-                  <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11 }} allowDecimals={false} />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "#64748b" }} />
+                  <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "#64748b" }} allowDecimals={false} />
                   <Tooltip
-                    cursor={{ fill: "var(--muted)" }}
-                    contentStyle={{ borderRadius: 8, border: "1px solid var(--border)", fontSize: 12 }}
+                    cursor={{ fill: "#f1f5f9" }}
+                    contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}
                     formatter={(v: number, name: string) => name === "value" ? fmtBDT(v) : [`${v} leads`, name]}
                   />
-                  <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={56}>
+                  <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={64}>
                     {chartData.map((d, i) => (
-                      <Cell
-                        key={i}
-                        fill={d.isTerminal ? (d.stage === "Paid" ? "var(--status-paid)" : "var(--status-lost)") : d.stage === "Proposal" || d.stage === "Invoice sent" ? "var(--status-warn)" : "var(--brand)"}
-                      />
+                      <Cell key={i} fill={STAGE_CHART_COLORS[d.stage as Stage] ?? "#0d9488"} />
                     ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
             <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
-              <Legend color="var(--brand)" label="Active (New → Meeting)" />
-              <Legend color="var(--status-warn)" label="Proposal / Invoice" />
-              <Legend color="var(--status-paid)" label="Paid" />
-              <Legend color="var(--status-lost)" label="Lost" />
+              <Legend color="#6366f1" label="New" />
+              <Legend color="#0d9488" label="Contacted → Meeting" />
+              <Legend color="#f59e0b" label="Proposal / Invoice" />
+              <Legend color="#10b981" label="Paid" />
+              <Legend color="#ef4444" label="Lost" />
             </div>
           </CardContent>
         </Card>
