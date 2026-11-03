@@ -11,6 +11,7 @@ export interface ChatOptions {
   temperature?: number;
   maxTokens?: number;
   jsonMode?: boolean;
+  model?: string; // override the default Workers AI model for this call
 }
 
 export interface ChatResult {

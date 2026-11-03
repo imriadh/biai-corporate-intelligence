@@ -57,10 +57,12 @@ EMAIL STRUCTURE — follow exactly, use blank lines between sections:
 
 LENGTH: aim for 120-170 words total. Plain text only. No bullet points, no bold, no markdown.
 
-Output STRICT JSON: {"subject": string, "body": string}. The body must contain the real newlines (\\n) between sections as described. No prose outside the JSON.`;
+OUTPUT FORMAT — plain text, NOT JSON. First line MUST be:
+Subject: <the email subject>
+Then one blank line, then the email body exactly as described above (greeting, paragraphs, next-step, sign-off block). Do not output any JSON, no curly braces, no code fences.`;
 
 export const EMAIL_USER_TEMPLATE = (ctx: string) =>
-  `Write a follow-up email for this BIAI lead.\n\n${ctx}\n\nReturn JSON {"subject": "...", "body": "..."} now.`;
+  `Write a follow-up email for this BIAI lead.\n\n${ctx}\n\nWrite the email now. Start with "Subject:" on the first line, then a blank line, then the body. Plain text only.`;
 
 /**
  * Build the NL-query context: a compact schema description + the available

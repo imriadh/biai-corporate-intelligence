@@ -51,28 +51,42 @@ aiRoute.post("/email", async (c) => {
   if (!lead) return c.json({ error: `Lead ${leadId} not found.` }, 404);
 
   try {
+    // Use the fast 8B model for email (1-2s vs 4-9s for 70B).
+    // Plain-text format (not JSON) — the 8B handles plain text reliably.
     const result = await chat(c.env, [
       { role: "system", content: EMAIL_SYSTEM_PROMPT },
       { role: "user", content: EMAIL_USER_TEMPLATE(leadEmailContext(lead)) },
-    ], { temperature: 0.5, maxTokens: 900, jsonMode: true });
+    ], { temperature: 0.5, maxTokens: 600, model: "@cf/meta/llama-3.1-8b-instruct-fast" });
 
-    let email: { subject: string; body: string };
-    try { email = extractJSON<{ subject: string; body: string }>(result.content); }
-    catch {
-      return c.json({ error: "The model returned a malformed response. Please try Regenerate.", provider: result.provider, model: result.model, raw: result.content.slice(0, 400) }, 502);
+    // Parse plain-text "Subject: ...\n\n<body>" format (no JSON needed)
+    const raw = result.content.trim();
+    let subject = "";
+    let body = raw;
+    const lines = raw.split("\n");
+    const subjectLine = lines.find((l) => /^Subject:/i.test(l.trim()));
+    if (subjectLine) {
+      // Strip "Subject:" prefix (and any doubled prefix the model might add)
+      subject = subjectLine.replace(/^Subject:\s*/i, "").replace(/^Subject:\s*/i, "").trim();
+      const subjectIdx = lines.indexOf(subjectLine);
+      // body = everything after the subject line, skipping the blank line after it
+      body = lines.slice(subjectIdx + 1).join("\n").replace(/^\s*\n/, "").trim();
+    } else {
+      // fallback: no "Subject:" prefix — use first line as subject, rest as body
+      subject = lines[0].trim();
+      body = lines.slice(1).join("\n").trim();
     }
-    if (!email.subject || !email.body) return c.json({ error: "The model response was missing subject or body." }, 502);
+    if (!subject || !body) {
+      return c.json({ error: "The model returned an incomplete response. Please try Regenerate.", provider: result.provider, model: result.model }, 502);
+    }
 
-    // Gmail compose URL — opens Gmail with To/Subject/Body pre-filled (no copy/paste needed).
-    // To: the lead's contact email (if present). Falls back to no recipient if missing.
+    // Gmail compose URL — uses /u/0/ for the signed-in account (opens fast).
     const to = lead.contactEmail || "";
-    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1${to ? `&to=${encodeURIComponent(to)}` : ""}&su=${encodeURIComponent(email.subject)}&body=${encodeURIComponent(email.body)}`;
-    // also a standard mailto: fallback for non-Gmail clients
-    const mailtoUrl = `mailto:${to}?subject=${encodeURIComponent(email.subject)}&body=${encodeURIComponent(email.body)}`;
+    const gmailUrl = `https://mail.google.com/mail/u/0/?tf=cm${to ? `&to=${encodeURIComponent(to)}` : ""}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    const mailtoUrl = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
     return c.json({
-      subject: email.subject.trim(),
-      body: email.body.trim(),
+      subject,
+      body,
       provider: result.provider,
       model: result.model,
       ms: result.ms,

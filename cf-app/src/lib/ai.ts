@@ -67,7 +67,7 @@ function pickOrder(env: Env): string[] {
 // ---------- Cloudflare Workers AI ----------
 
 async function chatWithWorkersAI(env: Env, messages: ChatMessage[], opts: ChatOptions): Promise<ChatResult> {
-  const model = env.AI_MODEL ?? DEFAULT_WORKERS_MODEL;
+  const model = opts.model ?? env.AI_MODEL ?? DEFAULT_WORKERS_MODEL;
   const t0 = Date.now();
   // Workers AI text-generation schema. We deliberately do NOT pass response_format
   // here — the schema for some instruct variants rejects it. The system prompt
