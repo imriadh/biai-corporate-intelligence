@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Copy, Check, RefreshCw, Mail, Sparkles, AlertTriangle, Building2, Phone, Mail as MailIcon, Tag, User, Clock, Wallet, FileText, ChevronRight } from "lucide-react";
+import { Copy, Check, RefreshCw, Mail, Sparkles, AlertTriangle, Building2, Phone, Mail as MailIcon, Tag, User, Clock, Wallet, FileText, ChevronRight, Pencil, Save, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -43,6 +44,50 @@ export function LeadDetail({ leads, selected, onSelect, onRefresh, onEmailSent }
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [savingStage, setSavingStage] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [form, setForm] = useState<Record<string, string>>({});
+
+  // reset edit state when lead changes
+  useEffect(() => {
+    setEditing(false);
+  }, [selected?.leadId]);
+
+  const startEdit = useCallback(() => {
+    if (!selected) return;
+    setForm({
+      company: selected.company ?? "",
+      industry: selected.industry ?? "",
+      contactName: selected.contactName ?? "",
+      contactRole: selected.contactRole ?? "",
+      contactEmail: selected.contactEmail ?? "",
+      contactPhone: selected.contactPhone ?? "",
+      source: selected.source ?? "",
+      dealValueRaw: selected.dealValueRaw ?? "",
+      lastContact: selected.lastContact ?? "",
+      nextFollowUp: selected.nextFollowUp ?? "",
+      notes: selected.notes ?? "",
+    });
+    setEditing(true);
+  }, [selected]);
+
+  const saveEdit = useCallback(async () => {
+    if (!selected) return;
+    setSavingEdit(true);
+    try {
+      const { company, industry, contactName, contactRole, contactEmail, contactPhone, source, dealValueRaw, lastContact, nextFollowUp, notes } = form;
+      await api.patchLead(selected.leadId, { company, industry, contactName, contactRole, contactEmail, contactPhone, source, dealValueRaw, lastContact, nextFollowUp, notes });
+      toast.success("Lead details saved", {
+        description: `${selected.leadId} updated — restore the previous values anytime from Data Quality → Recent cleanups.`,
+      });
+      setEditing(false);
+      onRefresh();
+    } catch (e) {
+      toast.error("Could not save details", { description: e instanceof Error ? e.message : "?" });
+    } finally {
+      setSavingEdit(false);
+    }
+  }, [selected, form, onRefresh]);
 
   // reset email state when lead changes
   useEffect(() => {
@@ -143,6 +188,11 @@ export function LeadDetail({ leads, selected, onSelect, onRefresh, onEmailSent }
                       </SelectContent>
                     </Select>
                     {savingStage && <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground" />}
+                    {!editing && (
+                      <Button size="sm" variant="outline" className="h-6 text-[11px] ml-auto" onClick={startEdit}>
+                        <Pencil className="h-3 w-3" /> Edit details
+                      </Button>
+                    )}
                   </div>
                   <CardTitle className="text-lg leading-tight">{selected.company}</CardTitle>
                   <CardDescription className="mt-0.5">{selected.industry} · {selected.source}</CardDescription>
@@ -156,6 +206,50 @@ export function LeadDetail({ leads, selected, onSelect, onRefresh, onEmailSent }
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
+              {editing ? (
+                <>
+                  {/* Edit form */}
+                  <div>
+                    <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Company</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <EditField label="Company" value={form.company ?? ""} onChange={(v) => setForm({ ...form, company: v })} />
+                      <EditField label="Industry" value={form.industry ?? ""} onChange={(v) => setForm({ ...form, industry: v })} />
+                      <EditField label="Source" value={form.source ?? ""} onChange={(v) => setForm({ ...form, source: v })} />
+                      <EditField label="Deal value (BDT)" value={form.dealValueRaw ?? ""} onChange={(v) => setForm({ ...form, dealValueRaw: v })} mono />
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Contact</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <EditField label="Name" value={form.contactName ?? ""} onChange={(v) => setForm({ ...form, contactName: v })} />
+                      <EditField label="Role" value={form.contactRole ?? ""} onChange={(v) => setForm({ ...form, contactRole: v })} />
+                      <EditField label="Email" value={form.contactEmail ?? ""} onChange={(v) => setForm({ ...form, contactEmail: v })} mono />
+                      <EditField label="Phone" value={form.contactPhone ?? ""} onChange={(v) => setForm({ ...form, contactPhone: v })} mono />
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Timeline (yyyy-mm-dd)</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <EditField label="Last contact" value={form.lastContact ?? ""} onChange={(v) => setForm({ ...form, lastContact: v })} mono placeholder="2026-10-24" />
+                      <EditField label="Next follow-up" value={form.nextFollowUp ?? ""} onChange={(v) => setForm({ ...form, nextFollowUp: v })} mono placeholder="2026-11-03" />
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Notes</h4>
+                    <Textarea value={form.notes ?? ""} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={4} className="text-[13px]" />
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <Button size="sm" className="bg-brand text-brand-foreground hover:bg-brand/90" disabled={savingEdit} onClick={() => void saveEdit()}>
+                      {savingEdit ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Saving…</> : <><Save className="h-3.5 w-3.5" /> Save changes</>}
+                    </Button>
+                    <Button size="sm" variant="ghost" disabled={savingEdit} onClick={() => setEditing(false)}>
+                      <XCircle className="h-3.5 w-3.5" /> Cancel
+                    </Button>
+                    <span className="text-[11px] text-muted-foreground ml-auto">Saved to the database · previous values stay undoable.</span>
+                  </div>
+                </>
+              ) : (
+              <>
               {/* Contact */}
               <div>
                 <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Contact</h4>
@@ -188,6 +282,8 @@ export function LeadDetail({ leads, selected, onSelect, onRefresh, onEmailSent }
                 <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Notes</h4>
                 <p className="text-[13px] leading-relaxed bg-muted/40 rounded-md p-3">{selected.notes || "No notes on file."}</p>
               </div>
+              </>
+              )}
             </CardContent>
           </Card>
 
@@ -199,7 +295,7 @@ export function LeadDetail({ leads, selected, onSelect, onRefresh, onEmailSent }
                   <AlertTriangle className="h-4 w-4 text-status-lost" />
                   Data-quality warnings ({issues.length})
                 </CardTitle>
-                <CardDescription>Raw imported values are preserved; nothing is auto-corrected.</CardDescription>
+                <CardDescription>Fix any issue inline with “Edit details” — every change is logged and undoable from Data Quality → Recent cleanups.</CardDescription>
               </CardHeader>
               <CardContent className="pt-0 space-y-2">
                 {issues.map((iss, i) => (
@@ -334,6 +430,22 @@ export function LeadDetail({ leads, selected, onSelect, onRefresh, onEmailSent }
         </div>
       </div>
     </div>
+  );
+}
+
+function EditField({ label, value, onChange, mono, placeholder }: {
+  label: string; value: string; onChange: (v: string) => void; mono?: boolean; placeholder?: string;
+}) {
+  return (
+    <label className="block">
+      <span className="text-[11px] text-muted-foreground block mb-1">{label}</span>
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={cn("h-8 text-[12.5px] bg-background", mono && "font-mono text-[12px]")}
+      />
+    </label>
   );
 }
 

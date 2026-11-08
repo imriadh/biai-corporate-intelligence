@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { Copy, UserX, CalendarX, AlertTriangle, Check, X, Layers, FileWarning, ChevronRight, ShieldAlert } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Copy, UserX, CalendarX, AlertTriangle, Check, X, Layers, FileWarning, ChevronRight, Sparkles, Scissors, Mail, Merge, Trash2, History, Undo2, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "sonner";
+import { api, type CleanPreviewAction, type CleanLogEntry, type CleanActionId } from "@/lib/api";
 import type { AuditSummary, NormalizedLead } from "@/lib/types";
 import { fmtBDT, fmtDate } from "./format";
 import { StageBadge } from "./stage-badge";
@@ -15,9 +17,10 @@ interface Props {
   leads: NormalizedLead[];
   audit: AuditSummary;
   onOpenLead: (id: string) => void;
+  onRefresh: () => void;
 }
 
-export function DataQuality({ leads, audit, onOpenLead }: Props) {
+export function DataQuality({ leads, audit, onOpenLead, onRefresh }: Props) {
   const exactPairs = audit.exactDuplicatePairs;
   const potentialPairs = audit.potentialDuplicatePairs;
   const missingLeads = leads.filter((l) => l.missingFields.length > 0);
@@ -25,8 +28,83 @@ export function DataQuality({ leads, audit, onOpenLead }: Props) {
   const overdueLeads = leads.filter((l) => l.isOverdue);
   const emailCasingLeads = leads.filter((l) => l.issues.some((i) => i.type === "email_casing"));
 
-  const totalIssues =
-    exactPairs.length + potentialPairs.length + missingLeads.length + dateErrLeads.length + overdueLeads.length + emailCasingLeads.length;
+  const [preview, setPreview] = useState<CleanPreviewAction[] | null>(null);
+  const [log, setLog] = useState<CleanLogEntry[]>([]);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+
+  const loadCleanData = useCallback(async () => {
+    try {
+      const [p, l] = await Promise.all([api.cleanPreview(), api.cleanLog()]);
+      setPreview(p.actions);
+      setLog(l.log);
+    } catch {
+      /* preview is auxiliary — the rest of the screen still works */
+    }
+  }, []);
+
+  useEffect(() => { loadCleanData(); }, [loadCleanData]);
+
+  const totalCleanable = preview?.reduce((n, a) => n + a.affected, 0) ?? 0;
+
+  const applyClean = async (ids: CleanActionId[], busyKey: string) => {
+    setBusyAction(busyKey);
+    try {
+      const res = await api.cleanApply(ids);
+      const deletedBit = res.deletedIds.length > 0 ? `, deleted ${res.deletedIds.join(", ")}` : "";
+      toast.success("Pipeline cleaned", {
+        description: `${res.totalAffected} record(s) changed${deletedBit}. Everything is reversible.`,
+        action: {
+          label: "Undo",
+          onClick: () => void undoLog(res.logId),
+        },
+      });
+      await loadCleanData();
+      onRefresh();
+    } catch (e) {
+      toast.error("Clean failed", { description: e instanceof Error ? e.message : "?" });
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const undoLog = async (logId: number) => {
+    try {
+      const res = await api.cleanUndo(logId);
+      toast.success("Restored", { description: `${res.restoredIds.join(", ")} back to its previous state.` });
+      await loadCleanData();
+      onRefresh();
+    } catch (e) {
+      toast.error("Undo failed", { description: e instanceof Error ? e.message : "?" });
+    }
+  };
+
+  const mergePair = async (keepId: string, mergeId: string) => {
+    try {
+      const res = await api.mergeLeads(keepId, mergeId);
+      toast.success(`${mergeId} merged into ${keepId}`, {
+        description: "Empty fields filled, notes appended, duplicate deleted.",
+        action: { label: "Undo", onClick: () => void undoLog(res.logId) },
+      });
+      await loadCleanData();
+      onRefresh();
+    } catch (e) {
+      toast.error("Merge failed", { description: e instanceof Error ? e.message : "?" });
+    }
+  };
+
+  const deleteLead = async (id: string) => {
+    try {
+      const res = await api.deleteLead(id);
+      toast.success(`${id} deleted`, {
+        description: "Removed from the pipeline. One click brings it back.",
+        action: { label: "Undo", onClick: () => void undoLog(res.logId) },
+      });
+      await loadCleanData();
+      onRefresh();
+    } catch (e) {
+      toast.error("Delete failed", { description: e instanceof Error ? e.message : "?" });
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -40,7 +118,8 @@ export function DataQuality({ leads, audit, onOpenLead }: Props) {
             <div className="min-w-0">
               <h2 className="text-[15px] font-semibold">Data Quality Center</h2>
               <p className="text-[12px] text-muted-foreground mt-0.5">
-                {audit.flaggedLeadIds.length} of {audit.totalRecords} leads have at least one flag. Original imported values are always preserved — nothing is auto-corrected or deleted.
+                {audit.flaggedLeadIds.length} of {audit.totalRecords} leads have at least one flag. Fix issues right here —
+                merge or delete duplicates, run one-click cleaning, edit any field — and undo every change with one click.
               </p>
             </div>
           </div>
@@ -50,45 +129,106 @@ export function DataQuality({ leads, audit, onOpenLead }: Props) {
             <SummaryStat label="Missing contacts" value={missingLeads.length} tone="error" icon={UserX} />
             <SummaryStat label="Date errors" value={dateErrLeads.length} tone="error" icon={CalendarX} />
             <SummaryStat label="Overdue" value={overdueLeads.length} tone="overdue" icon={AlertTriangle} />
-            <SummaryStat label="Email casing" value={emailCasingLeads.length} tone="info" icon={FileWarning} />
+            <SummaryStat label="Quick-clean items" value={totalCleanable} tone="info" icon={Sparkles} />
           </div>
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="duplicates">
+      <Tabs defaultValue="quick-clean">
         <TabsList>
+          <TabsTrigger value="quick-clean">Quick clean ({totalCleanable})</TabsTrigger>
           <TabsTrigger value="duplicates">Duplicates ({exactPairs.length + potentialPairs.length})</TabsTrigger>
           <TabsTrigger value="missing">Missing info ({missingLeads.length})</TabsTrigger>
           <TabsTrigger value="dates">Dates ({dateErrLeads.length + overdueLeads.length})</TabsTrigger>
           <TabsTrigger value="other">Other ({emailCasingLeads.length})</TabsTrigger>
         </TabsList>
 
-        {/* Duplicates */}
+        {/* Quick clean — one-click actions + history */}
+        <TabsContent value="quick-clean" className="space-y-3">
+          <SectionHeader
+            title="One-click cleaning"
+            desc="Safe, reviewable fixes computed from your current data. Every action shows exactly what it will change before you run it — and every run can be undone."
+          />
+          {!preview ? (
+            <Card><CardContent className="py-8 text-center flex items-center justify-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Computing cleaning plan…
+            </CardContent></Card>
+          ) : totalCleanable === 0 ? (
+            <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">
+              Nothing to clean — no stray spaces, no casing issues, no exact duplicates. Your pipeline is tidy.
+            </CardContent></Card>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  className="h-8 text-[12px] bg-brand text-brand-foreground hover:bg-brand/90"
+                  disabled={busyAction !== null}
+                  onClick={() => applyClean(preview.filter((a) => a.affected > 0).map((a) => a.id), "all")}
+                >
+                  {busyAction === "all" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                  Clean all {totalCleanable} issue{totalCleanable === 1 ? "" : "s"}
+                </Button>
+                <span className="text-[11px] text-muted-foreground">Runs every fix below in one go — one Undo restores everything.</span>
+              </div>
+              {preview.filter((a) => a.affected > 0 || a.id === "merge_exact_duplicates").map((a) => (
+                <CleanActionCard
+                  key={a.id}
+                  action={a}
+                  busy={busyAction !== null}
+                  onApply={() => applyClean([a.id], a.id)}
+                />
+              ))}
+            </>
+          )}
+
+          {/* Recent cleanups + undo */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2"><History className="h-4 w-4 text-muted-foreground" /> Recent cleanups</CardTitle>
+              <CardDescription>Every edit, delete, merge and cleaning run is logged with a full snapshot of the data it touched.</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-0">
+              {log.length === 0 ? (
+                <EmptyInline text="No cleanups yet." />
+              ) : (
+                <ul className="divide-y divide-border">
+                  {log.map((entry) => (
+                    <li key={entry.id} className="py-2 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-[12.5px] font-medium flex items-center gap-2">
+                          <Badge variant="outline" className="text-[10px] capitalize">{entry.action.replace("_", " ")}</Badge>
+                          <span className="truncate">{entry.summary}</span>
+                        </div>
+                        <div className="text-[11px] text-muted-foreground mt-0.5">
+                          {new Date(entry.createdAt + "Z").toLocaleString()} · touched {entry.targetIds.join(", ") || "—"}
+                        </div>
+                      </div>
+                      <Button size="sm" variant="outline" className="h-7 text-[11px] shrink-0" disabled={busyAction !== null} onClick={() => void undoLog(entry.id)}>
+                        <Undo2 className="h-3 w-3" /> Undo
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Duplicates — real merge / delete */}
         <TabsContent value="duplicates" className="space-y-3">
           <SectionHeader
             title="Duplicate companies"
-            desc="Exact duplicates share an identical normalized company name. Potential duplicates have different company names but the same contact identity (email/phone). Merge is never automatic — review each pair."
+            desc="Exact duplicates share an identical normalized company name. Potential duplicates have different company names but the same contact identity (email/phone). Merge fills empty fields and keeps the richer record; delete removes a row — both are undoable."
           />
           {exactPairs.length === 0 && potentialPairs.length === 0 && (
             <EmptyCard text="No duplicates detected." />
           )}
           {exactPairs.map((pair, i) => (
-            <DuplicatePairCard
-              key={`exact-${i}`}
-              pair={pair}
-              kind="exact"
-              leads={leads}
-              onOpenLead={onOpenLead}
-            />
+            <DuplicatePairCard key={`exact-${i}`} pair={pair} kind="exact" leads={leads} onOpenLead={onOpenLead} onMerge={mergePair} onDelete={deleteLead} />
           ))}
           {potentialPairs.map((pair, i) => (
-            <DuplicatePairCard
-              key={`pot-${i}`}
-              pair={pair}
-              kind="potential"
-              leads={leads}
-              onOpenLead={onOpenLead}
-            />
+            <DuplicatePairCard key={`pot-${i}`} pair={pair} kind="potential" leads={leads} onOpenLead={onOpenLead} onMerge={mergePair} onDelete={deleteLead} />
           ))}
         </TabsContent>
 
@@ -96,7 +236,7 @@ export function DataQuality({ leads, audit, onOpenLead }: Props) {
         <TabsContent value="missing" className="space-y-3">
           <SectionHeader
             title="Missing information"
-            desc="Required contact fields that are empty. Missing values are never guessed or auto-filled."
+            desc="Required contact fields that are empty. Open a lead to fill the gaps — edits are saved to the database and undoable from Recent cleanups."
           />
           {missingLeads.length === 0 ? <EmptyCard text="No missing contact details." /> : (
             <div className="rounded-lg border border-border overflow-hidden">
@@ -107,7 +247,7 @@ export function DataQuality({ leads, audit, onOpenLead }: Props) {
                     <th className="text-left font-medium px-2">Company</th>
                     <th className="text-left font-medium px-2">Stage</th>
                     <th className="text-left font-medium px-2">Missing fields</th>
-                    <th className="text-left font-medium py-2 pr-4">Suggested correction</th>
+                    <th className="text-left font-medium py-2 pr-4">Suggested next step</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -138,7 +278,7 @@ export function DataQuality({ leads, audit, onOpenLead }: Props) {
         <TabsContent value="dates" className="space-y-3">
           <SectionHeader
             title="Date validation"
-            desc="Invalid/unparseable dates and date-order violations (follow-up before last contact). Overdue follow-ups are listed separately — they are not date errors, just past due."
+            desc="Invalid/unparseable dates and date-order violations (follow-up before last contact). Overdue follow-ups are listed separately — they are not date errors, just past due. Fix any date by editing the lead."
           />
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <Card>
@@ -203,10 +343,17 @@ export function DataQuality({ leads, audit, onOpenLead }: Props) {
         <TabsContent value="other" className="space-y-3">
           <SectionHeader
             title="Other data-quality issues"
-            desc="Email casing signals likely data-entry typos. Notes that explicitly flag duplicates or data errors are surfaced for cross-checking."
+            desc="Email casing signals likely data-entry typos — fix them instantly from Quick clean. Notes that explicitly flag duplicates or data errors are surfaced for cross-checking."
           />
           {emailCasingLeads.length === 0 ? <EmptyCard text="No other issues." /> : (
             <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" className="h-8 text-[12px]" disabled={busyAction !== null || !(preview?.find((a) => a.id === "lowercase_emails")?.affected)} onClick={() => applyClean(["lowercase_emails"], "lowercase_emails")}>
+                  {busyAction === "lowercase_emails" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+                  Lowercase all {preview?.find((a) => a.id === "lowercase_emails")?.affected ?? emailCasingLeads.length} emails
+                </Button>
+                <span className="text-[11px] text-muted-foreground">One click — undoable from Recent cleanups.</span>
+              </div>
               {emailCasingLeads.map((l) => (
                 <Card key={l.leadId}>
                   <CardContent className="p-3 flex items-center justify-between gap-2">
@@ -234,19 +381,102 @@ export function DataQuality({ leads, audit, onOpenLead }: Props) {
   );
 }
 
-function DuplicatePairCard({ pair, kind, leads, onOpenLead }: {
+/* ------------------------------ quick clean card ----------------------------- */
+
+function CleanActionCard({ action, busy, onApply }: { action: CleanPreviewAction; busy: boolean; onApply: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const Icon = action.id === "trim_spaces" ? Scissors : action.id === "lowercase_emails" ? Mail : Merge;
+  return (
+    <Card>
+      <CardContent className="p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2.5 min-w-0">
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-amber-50 border border-amber-200 text-status-warn shrink-0">
+              <Icon className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[13px] font-semibold">{action.label}</span>
+                <Badge variant="outline" className={cn("text-[10px]", action.affected > 0 ? "border-amber-200 bg-amber-50 text-status-warn" : "border-slate-200 bg-slate-50 text-muted-foreground")}>
+                  {action.affected} affected
+                </Badge>
+              </div>
+              <p className="text-[12px] text-muted-foreground mt-0.5">{action.description}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {action.rows.length > 0 && (
+              <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => setExpanded(!expanded)}>
+                {expanded ? "Hide" : "Review"}
+              </Button>
+            )}
+            <Button size="sm" variant={action.affected > 0 ? "default" : "outline"} className="h-7 text-[11px] bg-brand text-brand-foreground hover:bg-brand/90" disabled={busy || action.affected === 0} onClick={onApply}>
+              {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+              Clean
+            </Button>
+          </div>
+        </div>
+        {expanded && action.rows.length > 0 && (
+          <ul className="mt-2 rounded-md border border-border bg-muted/30 divide-y divide-border max-h-56 overflow-y-auto">
+            {action.rows.map((r) => (
+              <li key={`${action.id}-${r.leadId}`} className="px-3 py-1.5 text-[11.5px] font-mono text-muted-foreground truncate" title={r.detail}>
+                <span className="font-semibold text-foreground">{r.leadId}</span> — {r.detail}
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ------------------------------ duplicate pair ------------------------------- */
+
+function DuplicatePairCard({ pair, kind, leads, onOpenLead, onMerge, onDelete }: {
   pair: [string, string];
   kind: "exact" | "potential";
   leads: NormalizedLead[];
   onOpenLead: (id: string) => void;
+  onMerge: (keepId: string, mergeId: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
 }) {
-  const [decision, setDecision] = useState<"none" | "keep-a" | "keep-b" | "dismissed">("none");
+  const [hidden, setHidden] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const a = leads.find((l) => l.leadId === pair[0])!;
   const b = leads.find((l) => l.leadId === pair[1])!;
   const link = a.duplicateLinks.find((d) => d.partnerIds.includes(b.leadId)) ?? b.duplicateLinks.find((d) => d.partnerIds.includes(a.leadId));
 
+  if (hidden) return null;
+
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    try { await fn(); } finally { setBusy(false); }
+  };
+
+  const deleteButton = (target: NormalizedLead, other: NormalizedLead) => (
+    <Button
+      size="sm"
+      variant="ghost"
+      className={cn("h-7 text-[11px]", pendingDelete === target.leadId ? "text-status-lost hover:text-status-lost bg-rose-50" : "text-muted-foreground")}
+      disabled={busy}
+      onClick={() => {
+        if (pendingDelete === target.leadId) {
+          setPendingDelete(null);
+          void run(() => onDelete(target.leadId));
+        } else {
+          setPendingDelete(target.leadId);
+          window.setTimeout(() => setPendingDelete((p) => (p === target.leadId ? null : p)), 4000);
+        }
+      }}
+    >
+      <Trash2 className="h-3 w-3" />
+      {pendingDelete === target.leadId ? `Really delete ${target.leadId}?` : `Delete ${target.leadId}`}
+    </Button>
+  );
+
   return (
-    <Card className={cn(decision !== "none" && "opacity-60")}>
+    <Card>
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between gap-2">
           <CardTitle className="text-sm flex items-center gap-2">
@@ -261,55 +491,50 @@ function DuplicatePairCard({ pair, kind, leads, onOpenLead }: {
       </CardHeader>
       <CardContent className="pt-0">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {[a, b].map((l) => (
-            <button
-              key={l.leadId}
-              onClick={() => onOpenLead(l.leadId)}
-              className={cn(
-                "text-left rounded-md border p-2.5 text-[12px] hover:border-brand",
-                decision === "keep-a" && l.leadId === a.leadId && "border-emerald-300 bg-emerald-50",
-                decision === "keep-b" && l.leadId === b.leadId && "border-emerald-300 bg-emerald-50",
-                (decision === "keep-a" && l.leadId === b.leadId) || (decision === "keep-b" && l.leadId === a.leadId) ? "border-rose-200 bg-rose-50 opacity-70" : "border-border",
-              )}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-mono text-[10px] text-muted-foreground">{l.leadId}</span>
-                <StageBadge stage={l.stageNormalized} />
+          {[a, b].map((l, idx) => {
+            const other = idx === 0 ? b : a;
+            return (
+              <div
+                key={l.leadId}
+                className={cn(
+                  "rounded-md border p-2.5 text-[12px]",
+                  idx === 0 ? "border-amber-200 bg-amber-50/40" : "border-border",
+                )}
+              >
+                <button onClick={() => onOpenLead(l.leadId)} className="text-left w-full">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-mono text-[10px] text-muted-foreground">{l.leadId}</span>
+                    <StageBadge stage={l.stageNormalized} />
+                  </div>
+                  <div className="font-medium text-[13px]">{l.company}</div>
+                  <div className="text-muted-foreground mt-0.5">{l.contactName || "— no name —"}</div>
+                  <div className="font-mono text-[11px] text-muted-foreground truncate">{l.contactEmail || "—"}</div>
+                  <div className="font-mono text-[11px] text-muted-foreground">{l.contactPhone || "—"}</div>
+                  {l.dealValue > 0 && <div className="mt-1 text-status-paid font-medium">{fmtBDT(l.dealValue)}</div>}
+                </button>
+                <div className="mt-2 border-t border-border pt-2 flex flex-wrap gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-[11px]"
+                    disabled={busy}
+                    onClick={() => void run(() => onMerge(l.leadId, other.leadId))}
+                  >
+                    <Merge className="h-3 w-3 text-status-paid" /> Merge {other.leadId} into this
+                  </Button>
+                  {deleteButton(l, other)}
+                </div>
               </div>
-              <div className="font-medium text-[13px]">{l.company}</div>
-              <div className="text-muted-foreground mt-0.5">{l.contactName || "— no name —"}</div>
-              <div className="font-mono text-[11px] text-muted-foreground truncate">{l.contactEmail || "—"}</div>
-              <div className="font-mono text-[11px] text-muted-foreground">{l.contactPhone || "—"}</div>
-              {l.dealValue > 0 && <div className="mt-1 text-status-paid font-medium">{fmtBDT(l.dealValue)}</div>}
-            </button>
-          ))}
+            );
+          })}
         </div>
-        {/* Merge workflow */}
-        <div className="mt-3 border-t border-border pt-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[11px] text-muted-foreground">Safe review workflow:</span>
-            <Button size="sm" variant="outline" className="h-7 text-[12px]" disabled={decision !== "none"} onClick={() => setDecision("keep-a")}>
-              <Check className="h-3 w-3 text-status-paid" /> Keep {a.leadId}
-            </Button>
-            <Button size="sm" variant="outline" className="h-7 text-[12px]" disabled={decision !== "none"} onClick={() => setDecision("keep-b")}>
-              <Check className="h-3 w-3 text-status-paid" /> Keep {b.leadId}
-            </Button>
-            <Button size="sm" variant="ghost" className="h-7 text-[12px]" disabled={decision !== "none"} onClick={() => setDecision("dismissed")}>
-              <X className="h-3 w-3" /> Dismiss
-            </Button>
-            {decision !== "none" && (
-              <Button size="sm" variant="ghost" className="h-7 text-[12px] ml-auto" onClick={() => setDecision("none")}>
-                Undo
-              </Button>
-            )}
-          </div>
-          {decision !== "none" && (
-            <p className="text-[11px] text-muted-foreground mt-1.5">
-              {decision === "dismissed"
-                ? "Pair dismissed. Neither record is modified."
-                : `Marked to keep ${decision === "keep-a" ? a.leadId : b.leadId}. The other record stays in the dataset (never auto-deleted); this decision is a review note only.`}
-            </p>
-          )}
+        <div className="mt-3 border-t border-border pt-3 flex items-center gap-2 flex-wrap">
+          <span className="text-[11px] text-muted-foreground">
+            Merge = keep this record, fill its empty fields from the other, append its notes, delete the other.
+          </span>
+          <Button size="sm" variant="ghost" className="h-7 text-[11px] ml-auto" disabled={busy} onClick={() => setHidden(true)}>
+            <X className="h-3 w-3" /> Keep both — hide this pair
+          </Button>
         </div>
       </CardContent>
     </Card>

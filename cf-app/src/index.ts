@@ -8,6 +8,7 @@ import { leadsRoute } from "./routes/leads";
 import { aiRoute } from "./routes/ai";
 import { authRoute } from "./routes/auth";
 import { importRoute } from "./routes/import";
+import { cleanRoute } from "./routes/clean";
 import { readSessionCookie, verifyJwt } from "./lib/auth";
 import type { Env } from "./lib/ai";
 
@@ -21,7 +22,7 @@ export interface AppEnv {
 const app = new Hono<AppEnv>();
 
 // CORS for the frontend (same origin in production, but allow dev split)
-app.use("/api/*", cors({ origin: ["*"], credentials: true, allowMethods: ["GET", "POST", "PATCH", "OPTIONS"], allowHeaders: ["Content-Type", "Authorization"] }));
+app.use("/api/*", cors({ origin: ["*"], credentials: true, allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"], allowHeaders: ["Content-Type", "Authorization"] }));
 
 // health check (no auth)
 app.get("/api/health", (c) => c.json({ status: "ok", app: "BIAI Corporate Intelligence", time: new Date().toISOString() }));
@@ -42,6 +43,7 @@ app.use("/api/*", async (c, next) => {
 });
 
 app.route("/api/leads", leadsRoute);
+app.route("/api/clean", cleanRoute);
 app.route("/api/ai", aiRoute);
 app.route("/api/import", importRoute);
 

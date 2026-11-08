@@ -39,7 +39,7 @@ React + Vite + TypeScript (frontend)  ──static assets──►  Cloudflare W
 2. **Executive Dashboard** — KPI cards (Total Leads, Pipeline Value, Overdue, Proposal, Paid), pipeline bar chart, stage breakdown, overdue + data-quality summaries, recently updated leads.
 3. **Leads Pipeline** — searchable, filterable (stage / industry / owner / issues-only), sortable table with overdue / missing / duplicate flags. Click any row → Lead Details.
 4. **Lead Details + AI Email** — full record, timeline, data-quality warnings, AI follow-up-email generator. **"Send via Gmail"** button opens Gmail compose with To/Subject/Body pre-filled — no copy/paste needed.
-5. **Data Quality Center** — duplicate detection (exact + potential) with safe review/merge workflow, missing contacts, date validation, email-casing flags.
+5. **Data Quality Center** — duplicate detection (exact + potential) with **real merge / delete actions**, one-click cleaning (trim spaces, lowercase emails, auto-merge exact duplicates), full-field lead editing, and a **cleanup history with one-click Undo** for every change.
 6. **AI Sales Analyst** — natural-language questions. Deterministic for common questions (exact calculations); AI-assisted structured query parser for flexible ones.
 7. **Import** — upload/paste a CSV → preview (insert/update/skip per row) → commit upsert into D1. Future-dated rows are handled correctly.
 
@@ -59,7 +59,7 @@ bun install
 cd frontend && bun install && cd ..
 ```
 
-### 2. Create the D1 database + apply the migration
+### 2. Create the D1 database + apply the migrations
 ```bash
 # create D1
 wrangler d1 create biai-leads
@@ -67,6 +67,8 @@ wrangler d1 create biai-leads
 
 # apply schema + seed 25 leads + demo user (remote)
 wrangler d1 execute biai-leads --file=migrations/0001_init.sql --remote
+# apply cleanup_log (data-cleaning undo history)
+wrangler d1 execute biai-leads --file=migrations/0002_cleanup.sql --remote
 ```
 
 ### 3. Set secrets (AI keys + JWT)

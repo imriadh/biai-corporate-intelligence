@@ -15,7 +15,7 @@ It turns the 25 messy fictional sample leads supplied by BIAI into a clear, quer
 | **Executive Dashboard** | KPI cards (Total Leads, Pipeline Value, Overdue, Proposal, Paid), pipeline bar chart, stage breakdown, overdue list, data-quality summary, recently updated leads |
 | **Leads Pipeline** | Searchable, filterable (stage / industry / owner / issues-only), sortable (deal value / follow-up / company) table with overdue / missing / duplicate flags. Click any row to open details |
 | **Lead Details + AI Email** | Full record (raw + normalized), timeline, data-quality warnings, and an AI follow-up-email assistant that uses the lead's real notes and respects missing fields |
-| **Data Quality Center** | Duplicate detection (exact + potential) with a safe review/merge workflow, missing-contact report, date validation (order violations + overdue), email-casing flags |
+| **Data Quality Center** | Duplicate detection (exact + potential) with real **merge / delete** actions, missing-contact report, date validation (order violations + overdue), email-casing flags, one-click cleaning (trim, email casing, auto-merge duplicates) and one-click **Undo** for every change |
 | **AI Sales Analyst** | Natural-language questions about the pipeline. Deterministic for common questions (exact calculations); AI-assisted structured query parser for flexible ones. The model never invents records or totals |
 
 ---
@@ -103,7 +103,7 @@ The pipeline (`src/lib/data/pipeline.ts`) is the single source of truth. It:
 - **Detects duplicates:** exact (identical normalized company name) vs potential (different name but same contact identity — email/phone). Confirmed vs possible are clearly distinguished.
 - **Validates dates:** flags unparseable dates and date-order violations (follow-up before last contact). Empty follow-up on Paid/Lost is **not** a violation (terminal stages). Empty last-contact on New-stage leads is **consistent** with the stage definition.
 - **Computes overdue** from a fixed reference date (`2026-11-01`, per `stage-definitions.md`), reproducibly. Terminal stages are never actionable overdue.
-- **Never auto-deletes or auto-corrects** anything. The Data Quality Center offers a manual review/merge workflow that records a decision without modifying the dataset.
+- **Everything is editable — nothing is locked.** Merge or delete duplicates, fix any field inline, run one-click cleaning. Every action snapshots the affected rows first, so **Undo** (Data Quality → Recent cleanups) restores the exact previous state — deleted rows come back, edited fields revert.
 
 The TypeScript pipeline reproduces the Python audit (`scripts/audit.py`) exactly — verified by `scripts/verify-pipeline.ts` (25/25 checks pass).
 

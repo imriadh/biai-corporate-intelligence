@@ -68,6 +68,51 @@ export interface ImportResponse {
   inserted?: number; updated?: number; skipped?: number; committed?: boolean;
 }
 
+// ---------- data cleaning ----------
+
+export type CleanActionId = "trim_spaces" | "lowercase_emails" | "merge_exact_duplicates";
+
+export interface CleanPreviewRow { leadId: string; detail: string }
+export interface CleanPreviewAction {
+  id: CleanActionId;
+  label: string;
+  description: string;
+  affected: number;
+  rows: CleanPreviewRow[];
+}
+export interface CleanPreviewResponse { actions: CleanPreviewAction[] }
+
+export interface CleanApplyResponse {
+  ok: boolean;
+  logId: number;
+  perAction: { id: string; label: string; changed: number; deleted: number }[];
+  updatedIds: string[];
+  deletedIds: string[];
+  totalAffected: number;
+}
+
+export interface CleanLogEntry {
+  id: number;
+  action: string;
+  summary: string;
+  targetIds: string[];
+  deletedIds: string[];
+  createdAt: string;
+}
+export interface CleanLogResponse { log: CleanLogEntry[] }
+export interface CleanUndoResponse { ok: boolean; restoredIds: string[] }
+
+export interface MergeResponse {
+  ok: boolean; kept: string; merged: string; logId: number; lead: NormalizedLead;
+}
+export interface DeleteResponse { ok: boolean; deletedId: string; logId: number }
+
+export type LeadPatch = Partial<{
+  company: string; industry: string; contactName: string; contactRole: string;
+  contactEmail: string; contactPhone: string; source: string; stage: string;
+  dealValueRaw: string; lastContact: string; nextFollowUp: string; notes: string;
+}>;
+
 export const api = {
   me: () => apiFetch<MeResponse>("/api/auth/me"),
   login: (username: string, password: string) =>
@@ -79,11 +124,33 @@ export const api = {
   logout: () => apiFetch<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
   audit: () => apiFetch<AuditResponse>("/api/leads/audit"),
   lead: (id: string) => apiFetch<LeadResponse>(`/api/leads/${encodeURIComponent(id)}`),
-  patchLead: (id: string, patch: { stage?: string; nextFollowUp?: string; notes?: string }) =>
-    apiFetch<{ ok: boolean; leadId: string }>(`/api/leads/${encodeURIComponent(id)}`, {
+  patchLead: (id: string, patch: LeadPatch) =>
+    apiFetch<{ ok: boolean; leadId: string; logId: number }>(`/api/leads/${encodeURIComponent(id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
+    }),
+  deleteLead: (id: string) =>
+    apiFetch<DeleteResponse>(`/api/leads/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  mergeLeads: (keepId: string, mergeId: string) =>
+    apiFetch<MergeResponse>("/api/leads/merge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keepId, mergeId }),
+    }),
+  cleanPreview: () => apiFetch<CleanPreviewResponse>("/api/clean/preview"),
+  cleanApply: (actions: CleanActionId[]) =>
+    apiFetch<CleanApplyResponse>("/api/clean/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actions }),
+    }),
+  cleanLog: () => apiFetch<CleanLogResponse>("/api/clean/log"),
+  cleanUndo: (logId: number) =>
+    apiFetch<CleanUndoResponse>("/api/clean/undo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ logId }),
     }),
   email: (leadId: string) =>
     apiFetch<EmailResponse>("/api/ai/email", {

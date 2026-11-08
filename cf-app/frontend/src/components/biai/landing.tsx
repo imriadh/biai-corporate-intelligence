@@ -200,7 +200,7 @@ export function Landing() {
           <div className="text-center mb-10">
             <Badge variant="outline" className="mb-3"><Layers className="h-3 w-3 mr-1" /> Data engineering</Badge>
             <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-3">Messy data, cleaned up as you build</h2>
-            <p className="text-muted-foreground max-w-2xl mx-auto">The sample CSV has mistakes on purpose. The pipeline catches them all — and preserves the raw values so nothing is lost.</p>
+            <p className="text-muted-foreground max-w-2xl mx-auto">The sample CSV has mistakes on purpose. The pipeline catches them all — and now fixes them too: merge or delete duplicates, one-click cleaning, and every change is undoable.</p>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {[
